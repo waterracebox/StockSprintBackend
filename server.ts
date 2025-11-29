@@ -57,7 +57,7 @@ io.on("connection", (socket) => {
     // console.log("使用者已連線", socket.id);
 });
 
-const PORT = process.env.PORT || 8000;
+const PORT = parseInt(process.env.PORT || "8000", 10);
 const HOST = "127.0.0.1"; // 繁體中文: 明確綁定至 127.0.0.1 以避免權限問題
 httpServer.listen(PORT, HOST, () => {
     console.log(`伺服器已啟動，監聽於 http://${HOST}:${PORT}`);
