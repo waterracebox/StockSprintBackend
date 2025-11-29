@@ -19,6 +19,7 @@
     
     // 型別檢查
     "strict": true,
+    "noImplicitAny": false,
     "isolatedModules": true,
     "skipLibCheck": true,
     "noUnusedLocals": false,
