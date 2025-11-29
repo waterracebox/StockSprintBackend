@@ -1,0 +1,6 @@
+{
+  "username": "admin",
+  "password": "admin123",
+  "displayName": "系統管理員",
+  "adminSecret": "super-secret-admin-key-change-in-production"
+}

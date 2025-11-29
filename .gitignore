@@ -140,7 +140,7 @@ vite.config.ts.timestamp-*
 
 /generated/prisma
 
-# 繁體中文: Docker 與資料庫
+# Docker 與資料庫
 pgdata/
 .docker/
 postgres_data/

@@ -1,6 +1,6 @@
 # StockSprint Backend
 
-繁體中文：即時股市模擬遊戲後端 API 與 WebSocket 服務
+即時股市模擬遊戲後端 API 與 WebSocket 服務
 
 ## 技術棧
 

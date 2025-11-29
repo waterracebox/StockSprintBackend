@@ -6,6 +6,11 @@ datasource db {
   provider = "postgresql" // 或 sqlite (開發用)
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique
@@ -14,6 +19,7 @@ model User {
   cash      Float    @default(50.0)
   stocks    Int      @default(0)
   debt      Float     @default(0.0) 
+  role        Role     @default(USER)
   firstSignIn Boolean  @default(true)
   contractOrders ContractOrder[]  // 關聯：合約訂單
 

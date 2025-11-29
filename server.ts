@@ -6,23 +6,22 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
-// 繁體中文: Prisma 7 使用 Adapter 方式連線 PostgreSQL
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
+// 驗證路由
+import authRoutes from "./src/routes/authRoutes.js";
+// 共享資料庫連線
+import { prisma, pool } from "./src/db.js";
 
 dotenv.config();
 
 const app = express();
-// 繁體中文: 建立 pg 連線池並透過 PrismaPg Adapter 注入 PrismaClient
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
 
 app.use(cors());
 app.use(express.json());
 
-// 繁體中文: 健康檢查 API，檢測伺服器與資料庫連線狀態
+// 掛載驗證路由
+app.use("/api/auth", authRoutes);
+
+// 健康檢查 API，檢測伺服器與資料庫連線狀態
 app.get("/health", async (req, res) => {
     try {
         // 嘗試執行簡單的資料庫查詢以驗證連線
@@ -58,13 +57,13 @@ io.on("connection", (socket) => {
 });
 
 const PORT = parseInt(process.env.PORT || "8000", 10);
-// 繁體中文: 生產環境綁定 0.0.0.0，本地開發綁定 127.0.0.1
+// 生產環境綁定 0.0.0.0，本地開發綁定 127.0.0.1
 const HOST = process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
 httpServer.listen(PORT, HOST, () => {
     console.log(`伺服器已啟動，監聽於 http://${HOST}:${PORT}`);
 });
 
-// 繁體中文: 優雅關閉
+// 優雅關閉
 async function gracefulShutdown(signal: string) {
     console.log(`接收到 ${signal}，開始優雅關閉...`);
     try {

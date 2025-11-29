@@ -1,4 +1,4 @@
-# 繁體中文: Render 部署配置檔
+# Render 部署配置檔
 # 自動化部署 StockSprint 後端至 Render 平台
 
 services:
