@@ -1,0 +1,15 @@
+# docker-compose.yml
+# 使用 PostgreSQL 17，並將資料持久化到本機
+version: "3.8"
+services:
+  db:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_USER: sprintuser
+      POSTGRES_PASSWORD: sprintpass
+      POSTGRES_DB: sprintdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data

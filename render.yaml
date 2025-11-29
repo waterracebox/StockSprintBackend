@@ -1,0 +1,32 @@
+# 繁體中文: Render 部署配置檔
+# 自動化部署 StockSprint 後端至 Render 平台
+
+services:
+  # 後端 Web 服務
+  - type: web
+    name: stock-sprint-backend
+    runtime: node
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stock-sprint-db
+          property: connectionString
+      - key: PORT
+        value: 10000
+
+databases:
+  # PostgreSQL 資料庫
+  - name: stock-sprint-db
+    databaseName: sprintdb
+    user: sprintuser
+    region: singapore
+    plan: free
+    ipAllowList: []

@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // 或 sqlite (開發用)
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String // Hashed
+  displayName String
+  cash      Float    @default(50.0)
+  stocks    Int      @default(0)
+  debt      Float     @default(0.0) 
+  firstSignIn Boolean  @default(true)
+  contractOrders ContractOrder[]  // 關聯：合約訂單
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+
+model GameStatus {
+  id              Int     @id @default(1) // 全域狀態，永遠只有 id: 1 這一筆
+  isGameStarted   Boolean @default(false)
+  currentDay      Int     @default(0)
+  gameStartTime   DateTime? // 核心：遊戲開始的絕對時間，用於計算精確進度
+}
+
+model Event {
+  id        Int      @id @default(autoincrement())
+  day       Int      
+  title     String
+  news      String?  @db.Text 
+  trend     Trend    // (使用 Enum)
+}
+
+model ScriptDay {
+  id        Int      @id @default(autoincrement())
+  day       Int      // 1, 2, 3... 120
+  price     Float    
+  title     String?  // (當天發布的新聞標題)
+  news      String?  @db.Text 
+  effectiveTrend String // (當天 "實際生效" 的趨勢)
+  publishTimeOffset Int?    // 新增：該日新聞發布的秒數偏移量 (0~59)，由演算法隨機產生
+}
+
+model ContractOrder {
+  id        Int          @id @default(autoincrement())
+  userId    Int
+  user      User         @relation(fields: [userId], references: [id])
+  
+  day       Int          // 下單時的遊戲天數 (Day X 下單，Day X+1 結算)
+  type      ContractType // LONG / SHORT
+  leverage  Float        // 1.0 ~ 10.0
+  quantity  Int          // 張數 (例如 1)
+  margin    Float        // 保證金 (下單時扣除的現金，例如 $20)金
+  
+  isSettled Boolean      @default(false) // 是否已結算
+  createdAt DateTime     @default(now())
+}
+
+
+// (Enum 保持不變)
+enum Trend {
+  CHAO_LI_DUO
+  LI_DUO
+  PAN_ZHENG
+  LI_KONG
+  CHAO_LI_KONG
+  BU_YING_XIANG
+}
+
+enum ContractType { 
+  LONG
+  SHORT
+}
