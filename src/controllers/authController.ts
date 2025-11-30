@@ -13,8 +13,12 @@ export async function register(req: Request, res: Response): Promise<void> {
   try {
     const { username, password, displayName } = req.body;
 
+    // 去除前後空白
+    const trimmedUsername = username?.trim();
+    const trimmedDisplayName = displayName?.trim();
+
     // 驗證必填欄位
-    if (!username || !password) {
+    if (!trimmedUsername || !password) {
       res.status(400).json({ error: "使用者名稱與密碼為必填" });
       return;
     }
@@ -30,7 +34,7 @@ export async function register(req: Request, res: Response): Promise<void> {
 
     // 檢查使用者名稱是否已存在
     const existingUser = await prisma.user.findUnique({
-      where: { username },
+      where: { username: trimmedUsername },
     });
 
     if (existingUser) {
@@ -44,9 +48,9 @@ export async function register(req: Request, res: Response): Promise<void> {
     // 建立新使用者（預設 cash=50, stocks=0, role=USER）
     const newUser = await prisma.user.create({
       data: {
-        username,
+        username: trimmedUsername,
         password: hashedPassword,
-        displayName: displayName || username, // 若未提供顯示名稱則使用 username
+        displayName: trimmedDisplayName || trimmedUsername, // 若未提供顯示名稱則使用 username
         cash: 50,
         stocks: 0,
         role: "USER",
@@ -80,15 +84,18 @@ export async function login(req: Request, res: Response): Promise<void> {
   try {
     const { username, password } = req.body;
 
+    // 去除前後空白
+    const trimmedUsername = username?.trim();
+
     // 驗證必填欄位
-    if (!username || !password) {
+    if (!trimmedUsername || !password) {
       res.status(400).json({ error: "使用者名稱與密碼為必填" });
       return;
     }
 
     // 查詢使用者
     const user = await prisma.user.findUnique({
-      where: { username },
+      where: { username: trimmedUsername },
     });
 
     if (!user) {
