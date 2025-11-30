@@ -8,6 +8,8 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 // 驗證路由
 import authRoutes from "./src/routes/authRoutes.js";
+// Socket 認證中介軟體
+import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 共享資料庫連線
 import { prisma, pool } from "./src/db.js";
 
@@ -46,14 +48,24 @@ app.get("/health", async (req, res) => {
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
     cors: {
-        origin: "*", // 測試階段允許所有來源
+        origin: process.env.CORS_ORIGIN || "*", // 使用環境變數或允許所有來源
+        methods: ["GET", "POST"],
+        credentials: true,
     },
 });
 
-// Socket.io 基本連線事件（暫無邏輯）
+// 套用 Socket.io 認證中介軟體
+socketAuthMiddleware(io);
+
+// Socket.io 連線事件
 io.on("connection", (socket) => {
-    // 連線成功
-    // console.log("使用者已連線", socket.id);
+    const { userId, role } = socket.data;
+    console.log(`[${new Date().toISOString()}] [WebSocket] 使用者 ${userId} (${role}) 已連線 (Socket ID: ${socket.id})`);
+
+    // 處理斷線事件
+    socket.on("disconnect", (reason) => {
+        console.log(`[${new Date().toISOString()}] [WebSocket] 使用者 ${userId} 已斷線 (原因: ${reason})`);
+    });
 });
 
 const PORT = parseInt(process.env.PORT || "8000", 10);
@@ -67,6 +79,7 @@ httpServer.listen(PORT, HOST, () => {
 async function gracefulShutdown(signal: string) {
     console.log(`接收到 ${signal}，開始優雅關閉...`);
     try {
+        io.close(); // 關閉 Socket.io 伺服器
         await prisma.$disconnect();
         await pool.end();
         httpServer.close(() => {
