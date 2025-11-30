@@ -148,3 +148,4 @@ postgres_data/
 # Prisma migrations（部署時由 Render 自動執行）
 prisma/migrations/
 
+tests/
