@@ -10,6 +10,10 @@ import { Server as SocketIOServer } from "socket.io";
 import authRoutes from "./src/routes/authRoutes.js";
 // Socket 認證中介軟體
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
+// 遊戲迴圈
+import { initializeGameLoop } from './src/gameLoop.js';
+// 遊戲服務 (Admin 測試用)
+import { startGame, stopGame } from './src/services/gameService.js';
 // 共享資料庫連線
 import { prisma, pool } from "./src/db.js";
 
@@ -22,6 +26,27 @@ app.use(express.json());
 
 // 掛載驗證路由
 app.use("/api/auth", authRoutes);
+
+// Admin 測試路由 (開發用)
+app.get("/api/admin/start-test", async (req, res) => {
+    try {
+        await startGame();
+        res.json({ message: "遊戲已開始" });
+    } catch (error: any) {
+        console.error(`[${new Date().toISOString()}] [Admin] 啟動遊戲失敗:`, error.message);
+        res.status(500).json({ error: "啟動遊戲失敗" });
+    }
+});
+
+app.get("/api/admin/stop-test", async (req, res) => {
+    try {
+        await stopGame();
+        res.json({ message: "遊戲已結束" });
+    } catch (error: any) {
+        console.error(`[${new Date().toISOString()}] [Admin] 結束遊戲失敗:`, error.message);
+        res.status(500).json({ error: "結束遊戲失敗" });
+    }
+});
 
 // 健康檢查 API，檢測伺服器與資料庫連線狀態
 app.get("/health", async (req, res) => {
@@ -67,6 +92,9 @@ io.on("connection", (socket) => {
         console.log(`[${new Date().toISOString()}] [WebSocket] 使用者 ${userId} 已斷線 (原因: ${reason})`);
     });
 });
+
+// 啟動遊戲迴圈 (在 Socket.io 設定後)
+initializeGameLoop(io);
 
 const PORT = parseInt(process.env.PORT || "8000", 10);
 // 生產環境綁定 0.0.0.0，本地開發綁定 127.0.0.1
