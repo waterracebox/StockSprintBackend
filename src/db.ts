@@ -7,8 +7,11 @@ import dotenv from "dotenv";
 // 載入環境變數
 dotenv.config();
 
-// 建立 PostgreSQL 連線池
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// 建立 PostgreSQL 連線池（生產環境需要 SSL）
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
 
 // 建立 Prisma Adapter
 const adapter = new PrismaPg(pool);
