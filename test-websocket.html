@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket 測試工具</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .status.disconnected {
+            background-color: #f44336;
+            color: white;
+        }
+        .status.waiting {
+            background-color: #FF9800;
+            color: white;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        input {
+            padding: 10px;
+            width: 400px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid transparent;
+        }
+        .log-entry.info {
+            border-left-color: #2196F3;
+        }
+        .log-entry.success {
+            border-left-color: #4CAF50;
+        }
+        .log-entry.error {
+            border-left-color: #f44336;
+        }
+        .log-entry.warning {
+            border-left-color: #FF9800;
+        }
+        .data-display {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 WebSocket 測試工具</h1>
+        
+        <div class="section">
+            <h3>1️⃣ 連線設定</h3>
+            <p>請先登入取得 Token，然後貼到下方：</p>
+            <input type="text" id="tokenInput" placeholder="請貼上 JWT Token (從 localStorage 取得)">
+            <br><br>
+            <button id="connectBtn" onclick="connectWebSocket()">連線 WebSocket</button>
+            <button id="disconnectBtn" onclick="disconnectWebSocket()" disabled>斷開連線</button>
+            <div id="connectionStatus" class="status waiting">⏳ 等待連線...</div>
+        </div>
+
+        <div class="section">
+            <h3>2️⃣ 管理操作</h3>
+            <button onclick="startGame()">▶️ 開始遊戲</button>
+            <button onclick="stopGame()">⏹️ 結束遊戲</button>
+            <button onclick="reloadScript()">🔄 重新載入劇本</button>
+        </div>
+
+        <div class="section">
+            <h3>3️⃣ 即時事件監聽</h3>
+            <div class="log" id="eventLog"></div>
+        </div>
+
+        <div class="section">
+            <h3>4️⃣ FULL_SYNC_STATE (連線時收到)</h3>
+            <div class="data-display" id="fullSyncData">等待資料...</div>
+        </div>
+
+        <div class="section">
+            <h3>5️⃣ PRICE_UPDATE (換日時收到)</h3>
+            <div class="data-display" id="priceUpdateData">等待資料...</div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('eventLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(text, className) {
+            const statusDiv = document.getElementById('connectionStatus');
+            statusDiv.textContent = text;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function connectWebSocket() {
+            const token = document.getElementById('tokenInput').value.trim();
+            
+            if (!token) {
+                alert('請先輸入 Token！\n\n提示：先到 http://127.0.0.1:8000/api/admin/start-test 頁面按 F12，\n在 Application > Local Storage 中找到 token 並複製');
+                return;
+            }
+
+            log('正在建立 WebSocket 連線...', 'info');
+            updateStatus('⏳ 連線中...', 'waiting');
+
+            socket = io('http://127.0.0.1:8000', {
+                auth: { token },
+                transports: ['websocket', 'polling']
+            });
+
+            // 連線成功
+            socket.on('connect', () => {
+                log(`✅ WebSocket 連線成功！Socket ID: ${socket.id}`, 'success');
+                updateStatus('✅ 已連線', 'connected');
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+            });
+
+            // 連線錯誤
+            socket.on('connect_error', (error) => {
+                log(`❌ 連線失敗: ${error.message}`, 'error');
+                updateStatus('❌ 連線失敗', 'disconnected');
+            });
+
+            // 斷線
+            socket.on('disconnect', (reason) => {
+                log(`🔌 連線已斷開: ${reason}`, 'warning');
+                updateStatus('🔌 已斷線', 'disconnected');
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+            });
+
+            // 監聽 FULL_SYNC_STATE
+            socket.on('FULL_SYNC_STATE', (data) => {
+                log('📦 收到 FULL_SYNC_STATE', 'success');
+                document.getElementById('fullSyncData').textContent = JSON.stringify(data, null, 2);
+            });
+
+            // 監聽 GAME_STATE_UPDATE
+            socket.on('GAME_STATE_UPDATE', (data) => {
+                log(`⏱️ 遊戲狀態更新: Day ${data.currentDay}, 倒數 ${data.countdown}s`, 'info');
+            });
+
+            // 監聽 PRICE_UPDATE
+            socket.on('PRICE_UPDATE', (data) => {
+                log(`💰 股價更新！Day ${data.day}: $${data.price.toFixed(2)}`, 'success');
+                document.getElementById('priceUpdateData').textContent = JSON.stringify(data, null, 2);
+            });
+        }
+
+        function disconnectWebSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        async function startGame() {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/admin/start-test');
+                const result = await response.json();
+                log(`▶️ ${result.message}`, 'success');
+                alert('遊戲已開始！請觀察事件日誌。');
+            } catch (error) {
+                log(`❌ 啟動遊戲失敗: ${error.message}`, 'error');
+            }
+        }
+
+        async function stopGame() {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/admin/stop-test');
+                const result = await response.json();
+                log(`⏹️ ${result.message}`, 'success');
+                alert('遊戲已結束！');
+            } catch (error) {
+                log(`❌ 結束遊戲失敗: ${error.message}`, 'error');
+            }
+        }
+
+        async function reloadScript() {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/admin/script/reload', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                log(`🔄 ${result.message}`, 'success');
+                alert('劇本已重新載入！');
+            } catch (error) {
+                log(`❌ 重新載入劇本失敗: ${error.message}`, 'error');
+            }
+        }
+
+        // 頁面載入時自動從 localStorage 讀取 token
+        window.onload = function() {
+            const savedToken = localStorage.getItem('token');
+            if (savedToken) {
+                document.getElementById('tokenInput').value = savedToken;
+                log('✅ 已從 localStorage 自動載入 Token', 'success');
+            } else {
+                log('⚠️ 未找到 Token，請先登入', 'warning');
+            }
+        };
+    </script>
+</body>
+</html>

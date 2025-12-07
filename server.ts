@@ -12,10 +12,12 @@ import authRoutes from "./src/routes/authRoutes.js";
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 遊戲迴圈
 import { initializeGameLoop } from './src/gameLoop.js';
-// 遊戲服務 (Admin 測試用)
-import { startGame, stopGame } from './src/services/gameService.js';
+// 遊戲服務
+import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory } from './src/services/gameService.js';
 // 共享資料庫連線
 import { prisma, pool } from "./src/db.js";
+// 型別定義
+import type { FullSyncPayload } from './src/types/events.js';
 
 dotenv.config();
 
@@ -45,6 +47,17 @@ app.get("/api/admin/stop-test", async (req, res) => {
     } catch (error: any) {
         console.error(`[${new Date().toISOString()}] [Admin] 結束遊戲失敗:`, error.message);
         res.status(500).json({ error: "結束遊戲失敗" });
+    }
+});
+
+// Admin 劇本重新載入路由 (開發用)
+app.post("/api/admin/script/reload", async (req, res) => {
+    try {
+        await loadScriptData();
+        res.json({ message: "劇本資料已重新載入" });
+    } catch (error: any) {
+        console.error(`[${new Date().toISOString()}] [Admin] 重新載入劇本失敗:`, error.message);
+        res.status(500).json({ error: "重新載入劇本失敗" });
     }
 });
 
@@ -83,9 +96,67 @@ const io = new SocketIOServer(httpServer, {
 socketAuthMiddleware(io);
 
 // Socket.io 連線事件
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
     const { userId, role } = socket.data;
     console.log(`[${new Date().toISOString()}] [WebSocket] 使用者 ${userId} (${role}) 已連線 (Socket ID: ${socket.id})`);
+
+    try {
+        // 取得使用者的最新資產資料
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { cash: true, stocks: true, debt: true },
+        });
+
+        if (!user) {
+            console.error(`[${new Date().toISOString()}] [Sync] 使用者 ${userId} 不存在，無法同步狀態`);
+            socket.disconnect(true);
+            return;
+        }
+
+        // 取得遊戲狀態
+        const gameState = await getGameState();
+
+        // 取得當前股價（若遊戲未開始則使用初始價格）
+        const currentData = getCurrentStockData(gameState.currentDay);
+        const currentPrice = currentData ? currentData.price : gameState.initialPrice;
+
+        // 取得股價歷史（若遊戲未開始則為空陣列）
+        const priceHistory = getPriceHistory(gameState.currentDay);
+
+        // 建構 FULL_SYNC_STATE Payload
+        const syncPayload: FullSyncPayload = {
+            gameStatus: {
+                currentDay: gameState.currentDay,
+                countdown: gameState.countdown,
+                isGameStarted: gameState.isGameStarted,
+                totalDays: gameState.totalDays,
+            },
+            price: {
+                current: currentPrice,
+                history: priceHistory.map(d => ({
+                    day: d.day,
+                    price: d.price,
+                    title: d.title,
+                    news: d.news,
+                    effectiveTrend: d.effectiveTrend,
+                })),
+            },
+            personal: {
+                cash: user.cash,
+                stocks: user.stocks,
+                debt: user.debt,
+            },
+        };
+
+        // 推送完整狀態給該使用者
+        socket.emit('FULL_SYNC_STATE', syncPayload);
+
+        console.log(
+            `[${new Date().toISOString()}] [Sync] 使用者 ${userId} 已接收完整狀態同步 (Day ${gameState.currentDay})`
+        );
+    } catch (error: any) {
+        console.error(`[${new Date().toISOString()}] [Sync] 狀態同步失敗:`, error.message);
+    }
 
     // 處理斷線事件
     socket.on("disconnect", (reason) => {
@@ -93,15 +164,27 @@ io.on("connection", (socket) => {
     });
 });
 
-// 啟動遊戲迴圈 (在 Socket.io 設定後)
-initializeGameLoop(io);
+// 啟動前先載入劇本資料
+(async () => {
+    try {
+        console.log(`[${new Date().toISOString()}] [Init] 正在載入劇本資料...`);
+        await loadScriptData();
+        console.log(`[${new Date().toISOString()}] [Init] 劇本資料載入完成`);
+    } catch (error: any) {
+        console.error(`[${new Date().toISOString()}] [Init] 劇本資料載入失敗:`, error.message);
+        process.exit(1); // 若劇本載入失敗，停止啟動
+    }
 
-const PORT = parseInt(process.env.PORT || "8000", 10);
-// 生產環境綁定 0.0.0.0，本地開發綁定 127.0.0.1
-const HOST = process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
-httpServer.listen(PORT, HOST, () => {
-    console.log(`伺服器已啟動，監聽於 http://${HOST}:${PORT}`);
-});
+    // 啟動遊戲迴圈 (在 Socket.io 設定後)
+    initializeGameLoop(io);
+
+    const PORT = parseInt(process.env.PORT || "8000", 10);
+    // 生產環境綁定 0.0.0.0，本地開發綁定 127.0.0.1
+    const HOST = process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
+    httpServer.listen(PORT, HOST, () => {
+        console.log(`伺服器已啟動，監聽於 http://${HOST}:${PORT}`);
+    });
+})();
 
 // 優雅關閉
 async function gracefulShutdown(signal: string) {

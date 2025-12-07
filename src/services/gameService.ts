@@ -1,6 +1,7 @@
 // 遊戲邏輯服務 - 管理遊戲狀態並計算當前天數
 
 import { prisma } from '../db.js';
+import type { ScriptDay } from '@prisma/client';
 
 /**
  * 遊戲狀態回傳型別
@@ -13,6 +14,65 @@ export interface GameState {
   timeRatio: number;
   initialPrice: number;
   initialCash: number;
+}
+
+/**
+ * 劇本資料快取（記憶體中）
+ * 避免每次 Tick 都查詢資料庫
+ */
+let scriptData: ScriptDay[] = [];
+
+/**
+ * 載入劇本資料到記憶體
+ * 應在伺服器啟動時呼叫一次
+ */
+export async function loadScriptData(): Promise<void> {
+  try {
+    scriptData = await prisma.scriptDay.findMany({
+      orderBy: { day: 'asc' },
+    });
+    console.log(`[${new Date().toISOString()}] [Script] 劇本資料已載入: ${scriptData.length} 筆記錄`);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Script] 載入劇本資料失敗:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * 取得指定天數的劇本資料
+ * @param day - 遊戲天數（0 表示遊戲未開始，1~120 為正常範圍）
+ * @returns 該天的劇本資料（包含股價、新聞等）
+ */
+export function getCurrentStockData(day: number): ScriptDay | null {
+  // Day 0: 遊戲未開始，返回初始價格（需從 GameStatus 取得）
+  if (day === 0) {
+    return null; // 呼叫方需自行處理 initialPrice
+  }
+
+  // Day 1~120: 正常範圍
+  const data = scriptData.find(d => d.day === day);
+  if (data) {
+    return data;
+  }
+
+  // Day > 120: 遊戲已結束，返回最後一天的資料
+  if (day > scriptData.length) {
+    return scriptData[scriptData.length - 1] || null;
+  }
+
+  return null;
+}
+
+/**
+ * 取得股價歷史資料（從 Day 1 到當前天）
+ * @param currentDay - 當前遊戲天數
+ * @returns 歷史股價陣列（依天數排序）
+ */
+export function getPriceHistory(currentDay: number): ScriptDay[] {
+  if (currentDay <= 0) {
+    return []; // 遊戲未開始，無歷史資料
+  }
+  return scriptData.filter(d => d.day <= currentDay);
 }
 
 /**
