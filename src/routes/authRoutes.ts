@@ -1,7 +1,7 @@
 // 定義身份驗證相關的 API 路由
 
 import { Router } from "express";
-import { register, login, getMe, registerAdmin } from "../controllers/authController.js";
+import { register, login, getMe, registerAdmin, updateAvatar } from "../controllers/authController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 
 const router = Router();
@@ -17,5 +17,8 @@ router.post("/login", login);
 
 // GET /api/auth/me - 取得當前使用者資訊（需驗證）
 router.get("/me", authenticateToken, getMe);
+
+// PATCH /api/auth/avatar - 更新使用者頭像（需驗證）
+router.patch("/avatar", authenticateToken, updateAvatar);
 
 export default router;

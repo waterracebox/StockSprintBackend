@@ -158,6 +158,7 @@ export async function getMe(req: Request, res: Response): Promise<void> {
         id: true,
         username: true,
         displayName: true,
+        avatar: true,
         cash: true,
         stocks: true,
         debt: true,
@@ -176,6 +177,72 @@ export async function getMe(req: Request, res: Response): Promise<void> {
     res.status(200).json({ user });
   } catch (error: any) {
     console.error("取得使用者資料失敗:", error.message);
+    res.status(500).json({ error: "伺服器錯誤" });
+  }
+}
+
+/**
+ * 更新使用者頭像
+ * PATCH /api/auth/avatar
+ * 需要驗證 (Protected Route)
+ */
+export async function updateAvatar(req: Request, res: Response): Promise<void> {
+  try {
+    // 驗證使用者身份（由 authenticateToken 中介軟體提供）
+    if (!req.user) {
+      res.status(401).json({ error: "未驗證" });
+      return;
+    }
+
+    const { avatar } = req.body;
+
+    // 驗證必填欄位
+    if (!avatar || typeof avatar !== 'string') {
+      res.status(400).json({ error: "頭像路徑為必填且必須為字串" });
+      return;
+    }
+
+    // 簡單驗證頭像格式（可根據需求擴充）
+    const validExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const isValidFormat = validExtensions.some(ext => avatar.toLowerCase().endsWith(ext));
+    
+    if (!isValidFormat) {
+      res.status(400).json({ 
+        error: "不支援的頭像格式，請使用 PNG、JPG、JPEG、GIF 或 WEBP" 
+      });
+      return;
+    }
+
+    // 更新使用者頭像
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { avatar: avatar.trim() },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        cash: true,
+        stocks: true,
+        debt: true,
+        role: true,
+        updatedAt: true,
+      },
+    });
+
+    console.log(
+      `[${new Date().toISOString()}] [Auth] 使用者 ${req.user.userId} 更新頭像: ${avatar}`
+    );
+
+    res.status(200).json({
+      message: "頭像更新成功",
+      user: updatedUser,
+    });
+  } catch (error: any) {
+    console.error(
+      `[${new Date().toISOString()}] [Auth] 更新頭像失敗:`,
+      error.message
+    );
     res.status(500).json({ error: "伺服器錯誤" });
   }
 }

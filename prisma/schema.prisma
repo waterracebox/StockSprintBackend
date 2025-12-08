@@ -16,10 +16,11 @@ model User {
   username  String   @unique
   password  String // Hashed
   displayName String
+  avatar    String   @default("avatar_00.webp") // 新增：頭像欄位
   cash      Float    @default(50.0)
   stocks    Int      @default(0)
   debt      Float     @default(0.0) 
-  role        Role     @default(USER)
+  role      Role     @default(USER)
   firstSignIn Boolean  @default(true)
   contractOrders ContractOrder[]  // 關聯：合約訂單
 
