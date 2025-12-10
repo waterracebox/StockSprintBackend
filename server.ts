@@ -14,6 +14,8 @@ import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js"
 import { initializeGameLoop } from './src/gameLoop.js';
 // 遊戲服務
 import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory } from './src/services/gameService.js';
+// 交易處理器
+import { registerTradeHandlers } from './src/socket/tradeHandlers.js';
 // 共享資料庫連線
 import { prisma, pool } from "./src/db.js";
 // 型別定義
@@ -157,6 +159,9 @@ io.on("connection", async (socket) => {
     } catch (error: any) {
         console.error(`[${new Date().toISOString()}] [Sync] 狀態同步失敗:`, error.message);
     }
+
+    // 註冊交易處理器 (CRITICAL: 必須在此處呼叫)
+    registerTradeHandlers(io, socket);
 
     // 處理斷線事件
     socket.on("disconnect", (reason) => {

@@ -187,3 +187,11 @@ netstat -ano | findstr ":8000"
 ## 授權
 
 MIT License
+
+## 產生測試資料
+
+npx prisma db seed
+
+## 簡單測試結束開始
+
+Start-Process test-websocket.html

@@ -47,3 +47,28 @@ export interface FullSyncPayload {
   };
   personal: PersonalAssets; // 個人資產
 }
+
+/**
+ * 交易請求 Payload
+ */
+export interface TradeRequest {
+  quantity: number; // 交易張數
+}
+
+/**
+ * 交易成功回應 Payload
+ */
+export interface TradeResponse {
+  action: 'BUY' | 'SELL'; // 交易動作
+  price: number; // 成交價格
+  amount: number; // 交易張數
+  newCash: number; // 更新後的現金
+  newStocks: number; // 更新後的持股數量
+}
+
+/**
+ * 交易失敗回應 Payload
+ */
+export interface TradeError {
+  message: string; // 錯誤訊息
+}
