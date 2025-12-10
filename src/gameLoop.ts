@@ -1,8 +1,8 @@
 // 遊戲主迴圈 - 每秒執行一次 Tick，廣播遊戲狀態與股價更新
 
 import { Server } from 'socket.io';
-import { getGameState, getCurrentStockData, getPriceHistory } from './services/gameService.js';
-import type { PriceUpdatePayload } from './types/events.js';
+import { getGameState, getCurrentStockData, getPriceHistory, getLeaderboard } from './services/gameService.js';
+import type { PriceUpdatePayload, LeaderboardUpdatePayload } from './types/events.js';
 
 /**
  * 初始化遊戲迴圈
@@ -90,6 +90,18 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
 
       console.log(
         `[${new Date().toISOString()}] [Price] Day ${gameState.currentDay} 股價已廣播: $${currentPrice.toFixed(2)}`
+      );
+
+      // ==================== 廣播排行榜更新 ====================
+      const leaderboard = await getLeaderboard(currentPrice);
+      const leaderboardPayload: LeaderboardUpdatePayload = {
+        data: leaderboard,
+      };
+
+      io.emit('LEADERBOARD_UPDATE', leaderboardPayload);
+
+      console.log(
+        `[${new Date().toISOString()}] [Leaderboard] 排行榜已廣播，共 ${leaderboard.length} 名玩家`
       );
     }
   } catch (error: any) {

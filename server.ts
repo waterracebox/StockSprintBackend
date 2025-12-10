@@ -13,7 +13,7 @@ import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js"
 // 遊戲迴圈
 import { initializeGameLoop } from './src/gameLoop.js';
 // 遊戲服務
-import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory } from './src/services/gameService.js';
+import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory, getLeaderboard } from './src/services/gameService.js';
 // 交易處理器
 import { registerTradeHandlers } from './src/socket/tradeHandlers.js';
 // 共享資料庫連線
@@ -125,6 +125,9 @@ io.on("connection", async (socket) => {
         // 取得股價歷史（若遊戲未開始則為空陣列）
         const priceHistory = getPriceHistory(gameState.currentDay);
 
+        // 取得排行榜資料
+        const leaderboard = await getLeaderboard(currentPrice);
+
         // 建構 FULL_SYNC_STATE Payload
         const syncPayload: FullSyncPayload = {
             gameStatus: {
@@ -148,6 +151,7 @@ io.on("connection", async (socket) => {
                 stocks: user.stocks,
                 debt: user.debt,
             },
+            leaderboard: leaderboard,
         };
 
         // 推送完整狀態給該使用者

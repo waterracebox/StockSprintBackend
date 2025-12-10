@@ -184,14 +184,63 @@ netstat -ano | findstr ":8000"
 
 ---
 
-## 授權
+## 測試與開發工具
 
-MIT License
+### 產生測試資料
 
-## 產生測試資料
+初始化遊戲資料（120 天股價劇本）：
 
+```powershell
 npx prisma db seed
+```
 
-## 簡單測試結束開始
+### 建立測試用戶
 
+產生 20 個測試用戶，用於測試排行榜功能：
+
+```powershell
+npx tsx prisma/seed-test-users.ts
+```
+
+**測試用戶資訊：**
+
+- **帳號**：`testuser1` ~ `testuser20`
+- **密碼**：`test1234`
+- **資產**：隨機現金（$10,000 ~ $50,000）和持股（0 ~ 100 張）
+- **頭像**：隨機分配（`avatar_00.webp` ~ `avatar_08.webp`）
+
+### 隨機調整用戶資產
+
+用於測試排行榜動態變化和排名上升動畫：
+
+```powershell
+npx tsx prisma/randomize-assets.ts
+```
+
+此腳本會：
+
+- 隨機調整每位用戶的現金（±$5,000）
+- 隨機調整每位用戶的持股（±20 張）
+- 顯示每位用戶的資產變化
+
+**測試排行榜流程：**
+
+1. 執行 `randomize-assets.ts` 調整資產
+2. 等待遊戲換日（倒數計時歸零）
+3. 觀察排行榜重新排序和綠色閃爍動畫
+
+### WebSocket 連線測試
+
+開啟測試頁面進行 WebSocket 連線測試：
+
+```powershell
 Start-Process test-websocket.html
+```
+
+### 啟動遠端測試（Render）
+
+啟動 Render 上的測試遊戲：
+
+```powershell
+Invoke-RestMethod -Uri "https://stock-sprint-backend.onrender.com/api/admin/start-test"
+```

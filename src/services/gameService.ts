@@ -161,3 +161,52 @@ export async function stopGame(): Promise<void> {
   });
   console.log(`[${new Date().toISOString()}] [Game] 遊戲已結束`);
 }
+
+/**
+ * 取得排行榜資料
+ * @param currentPrice - 當前股價（用於計算股票現值）
+ * @returns 排行榜陣列（前 100 名，依總資產降冪排序）
+ */
+export async function getLeaderboard(currentPrice: number): Promise<Array<{
+  userId: number;
+  displayName: string;
+  avatar: string | null;
+  totalAssets: number;
+  rank: number;
+}>> {
+  try {
+    // 僅查詢必要欄位，避免拉取密碼等敏感資料
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        displayName: true,
+        avatar: true,
+        cash: true,
+        stocks: true,
+      },
+    });
+
+    // 計算每位使用者的總資產
+    const leaderboard = users.map((user) => ({
+      userId: user.id,
+      displayName: user.displayName,
+      avatar: user.avatar,
+      totalAssets: user.cash + (user.stocks * currentPrice), // 現金 + 股票現值
+      rank: 0, // 暫時為 0，稍後排序後賦值
+    }));
+
+    // 按總資產降冪排序
+    leaderboard.sort((a, b) => b.totalAssets - a.totalAssets);
+
+    // 賦予排名（index + 1）
+    leaderboard.forEach((item, index) => {
+      item.rank = index + 1;
+    });
+
+    // 返回前 100 名（可選限制）
+    return leaderboard.slice(0, 100);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Leaderboard] 取得排行榜失敗:`, error.message);
+    return []; // 發生錯誤時返回空陣列
+  }
+}

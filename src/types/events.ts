@@ -46,6 +46,7 @@ export interface FullSyncPayload {
     history: PriceHistoryItem[]; // 股價歷史
   };
   personal: PersonalAssets; // 個人資產
+  leaderboard: LeaderboardItem[]; // 排行榜資料
 }
 
 /**
@@ -71,4 +72,23 @@ export interface TradeResponse {
  */
 export interface TradeError {
   message: string; // 錯誤訊息
+}
+
+/**
+ * 排行榜單筆記錄
+ */
+export interface LeaderboardItem {
+  userId: number;
+  displayName: string;
+  avatar: string | null; // 使用者頭像
+  totalAssets: number; // 總資產：現金 + 股票現值
+  rank: number; // 排名（1-based）
+}
+
+/**
+ * LEADERBOARD_UPDATE 事件的 Payload
+ * 當遊戲迴圈每秒廣播時，推送最新排行榜
+ */
+export interface LeaderboardUpdatePayload {
+  data: LeaderboardItem[]; // 排行榜資料（前 100 名）
 }
