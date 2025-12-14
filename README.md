@@ -244,3 +244,29 @@ Start-Process test-websocket.html
 ```powershell
 Invoke-RestMethod -Uri "https://stock-sprint-backend.onrender.com/api/admin/start-test"
 ```
+
+### Admin API 開發工具
+
+**快進遊戲天數：**
+
+用於開發測試，快速跳轉到指定天數（例如第 80 天）：
+
+```powershell
+# 本地環境
+Invoke-WebRequest -Method POST -Uri "http://localhost:8000/api/admin/fast-forward" -ContentType "application/json" -Body '{"targetDay": 80}'
+
+# 遠端環境
+Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/admin/fast-forward" -ContentType "application/json" -Body '{"targetDay": 80}'
+```
+
+**重新載入劇本資料：**
+
+當直接修改資料庫的 `ScriptDay` 資料後，可透過此 API 重新載入到記憶體（無需重啟伺服器）：
+
+```powershell
+# 本地環境
+Invoke-WebRequest -Method POST -Uri "http://localhost:8000/api/admin/script/reload"
+
+# 遠端環境
+Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/admin/script/reload"
+```

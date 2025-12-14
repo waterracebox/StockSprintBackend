@@ -3,7 +3,7 @@
 import { Server } from 'socket.io';
 import { prisma } from './db.js';
 import { getGameState, getCurrentStockData, getPriceHistory, getLeaderboard } from './services/gameService.js';
-import type { PriceUpdatePayload, LeaderboardUpdatePayload } from './types/events.js';
+import type { PriceUpdatePayload, LeaderboardUpdatePayload, NewsUpdatePayload } from './types/events.js';
 
 /**
  * 初始化遊戲迴圈
@@ -55,6 +55,35 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
       totalDays: gameState.totalDays,
       maxLeverage: gameState.maxLeverage, // 新增：最大槓桿倍數
     });
+
+    // ==================== 【新增】檢查新聞發布時機 ====================
+    if (gameState.isGameStarted && gameState.currentDay > 0) {
+      const currentData = getCurrentStockData(gameState.currentDay);
+      
+      if (currentData && currentData.title && currentData.publishTimeOffset !== null) {
+        // 計算當日經過的秒數
+        const gameStatusRecord = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+        if (gameStatusRecord && gameStatusRecord.gameStartTime) {
+          const elapsedTime = Date.now() - gameStatusRecord.gameStartTime.getTime();
+          const currentSecondInDay = Math.floor((elapsedTime / 1000) % gameState.timeRatio);
+
+          // 若當前秒數等於新聞發布時間偏移量，則廣播新聞
+          if (currentSecondInDay === currentData.publishTimeOffset) {
+            const newsPayload: NewsUpdatePayload = {
+              day: currentData.day,
+              title: currentData.title,
+              content: currentData.news || '',
+            };
+
+            io.emit('NEWS_UPDATE', newsPayload);
+
+            console.log(
+              `[${new Date().toISOString()}] [News] Day ${currentData.day} 新聞已廣播: ${currentData.title}`
+            );
+          }
+        }
+      }
+    }
 
     // 檢查是否發生「換日」事件
     if (gameState.isGameStarted && gameState.currentDay > previousDay) {

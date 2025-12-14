@@ -13,7 +13,7 @@ import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js"
 // 遊戲迴圈
 import { initializeGameLoop } from './src/gameLoop.js';
 // 遊戲服務
-import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory, getLeaderboard } from './src/services/gameService.js';
+import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory, getLeaderboard, getPastNews } from './src/services/gameService.js';
 // 交易處理器
 import { registerTradeHandlers } from './src/socket/tradeHandlers.js';
 // 共享資料庫連線
@@ -60,6 +60,45 @@ app.post("/api/admin/script/reload", async (req, res) => {
     } catch (error: any) {
         console.error(`[${new Date().toISOString()}] [Admin] 重新載入劇本失敗:`, error.message);
         res.status(500).json({ error: "重新載入劇本失敗" });
+    }
+});
+
+// 【新增】Admin 快進遊戲天數 (開發用)
+app.post("/api/admin/fast-forward", async (req, res) => {
+    try {
+        const { targetDay } = req.body;
+
+        if (!targetDay || targetDay < 1 || targetDay > 120) {
+            return res.status(400).json({ error: "targetDay 必須介於 1-120 之間" });
+        }
+
+        // 取得當前遊戲狀態
+        const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+
+        if (!gameStatus || !gameStatus.isGameStarted) {
+            return res.status(400).json({ error: "遊戲尚未開始" });
+        }
+
+        // 計算需要調整的秒數：(targetDay - 1) * timeRatio
+        const elapsedSeconds = (targetDay - 1) * gameStatus.timeRatio;
+
+        // 計算新的 gameStartTime（往前調整）
+        const newGameStartTime = new Date(Date.now() - elapsedSeconds * 1000);
+
+        // 更新資料庫
+        await prisma.gameStatus.update({
+            where: { id: 1 },
+            data: { gameStartTime: newGameStartTime },
+        });
+
+        console.log(`[${new Date().toISOString()}] [Admin] 快進至第 ${targetDay} 天`);
+        res.json({ 
+            message: `已快進至第 ${targetDay} 天`,
+            newGameStartTime: newGameStartTime.toISOString(),
+        });
+    } catch (error: any) {
+        console.error(`[${new Date().toISOString()}] [Admin] 快進遊戲失敗:`, error.message);
+        res.status(500).json({ error: "快進遊戲失敗" });
     }
 });
 
@@ -147,6 +186,13 @@ io.on("connection", async (socket) => {
         // 取得排行榜資料
         const leaderboard = await getLeaderboard(currentPrice);
 
+        // 【新增】取得歷史新聞
+        const newsHistory = getPastNews(gameState.currentDay);
+
+        console.log(
+            `[${new Date().toISOString()}] [Sync] 新聞歷史數量: ${newsHistory.length} 則`
+        );
+
         // 建構 FULL_SYNC_STATE Payload
         const syncPayload: FullSyncPayload = {
             gameStatus: {
@@ -172,6 +218,7 @@ io.on("connection", async (socket) => {
                 debt: user.debt,
             },
             activeContracts: activeContracts, // 新增：活躍合約列表
+            newsHistory: newsHistory, // 【新增】新聞歷史
             leaderboard: leaderboard,
         };
 

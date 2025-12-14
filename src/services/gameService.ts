@@ -2,6 +2,7 @@
 
 import { prisma } from '../db.js';
 import type { ScriptDay } from '@prisma/client';
+import type { NewsItem } from '../types/events.js';
 
 /**
  * 遊戲狀態回傳型別
@@ -240,4 +241,21 @@ export async function getLeaderboard(currentPrice: number): Promise<Array<{
     console.error(`[${new Date().toISOString()}] [Leaderboard] 取得排行榜失敗:`, error.message);
     return []; // 發生錯誤時返回空陣列
   }
+}
+
+/**
+ * 【新增】取得歷史新聞資料（從 Day 1 到當前天）
+ * @param currentDay - 當前遊戲天數
+ * @returns 歷史新聞陣列（依天數排序，僅包含有新聞的日子）
+ */
+export function getPastNews(currentDay: number): NewsItem[] {
+  // 篩選出有新聞的天數（title 不為 null）
+  const newsData = scriptData.filter(d => d.day <= currentDay && d.title !== null);
+
+  // 轉換格式並返回
+  return newsData.map(d => ({
+    day: d.day,
+    title: d.title!,
+    content: d.news || '', // 若 news 為 null，回傳空字串
+  }));
 }

@@ -44,6 +44,15 @@ export interface ActiveContract {
 }
 
 /**
+ * 【新增】新聞歷史單筆記錄
+ */
+export interface NewsItem {
+  day: number;
+  title: string;
+  content: string;
+}
+
+/**
  * FULL_SYNC_STATE 事件的 Payload
  * 當客戶端連線或重連時，伺服器推送完整狀態
  */
@@ -61,6 +70,7 @@ export interface FullSyncPayload {
   };
   personal: PersonalAssets; // 個人資產
   activeContracts: ActiveContract[]; // 活躍合約列表
+  newsHistory: NewsItem[]; // 【新增】新聞歷史
   leaderboard: LeaderboardItem[]; // 排行榜資料
 }
 
@@ -107,4 +117,14 @@ export interface LeaderboardItem {
  */
 export interface LeaderboardUpdatePayload {
   data: LeaderboardItem[]; // 排行榜資料（前 100 名）
+}
+
+/**
+ * 【新增】NEWS_UPDATE 事件的 Payload
+ * 當新聞發布時間點到達時廣播
+ */
+export interface NewsUpdatePayload {
+  day: number;
+  title: string;
+  content: string;
 }
