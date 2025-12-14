@@ -118,6 +118,25 @@ io.on("connection", async (socket) => {
         // 取得遊戲狀態
         const gameState = await getGameState();
 
+        // 取得使用者的活躍合約（當日未結算且未撤銷的合約）
+        const activeContracts = await prisma.contractOrder.findMany({
+            where: {
+                userId,
+                day: gameState.currentDay,
+                isSettled: false,
+                isCancelled: false,
+            },
+            select: {
+                id: true,
+                type: true,
+                leverage: true,
+                quantity: true,
+                margin: true,
+                entryPrice: true,
+                day: true,
+            },
+        });
+
         // 取得當前股價（若遊戲未開始則使用初始價格）
         const currentData = getCurrentStockData(gameState.currentDay);
         const currentPrice = currentData ? currentData.price : gameState.initialPrice;
@@ -135,6 +154,7 @@ io.on("connection", async (socket) => {
                 countdown: gameState.countdown,
                 isGameStarted: gameState.isGameStarted,
                 totalDays: gameState.totalDays,
+                maxLeverage: gameState.maxLeverage, // 新增：最大槓桿倍數
             },
             price: {
                 current: currentPrice,
@@ -151,6 +171,7 @@ io.on("connection", async (socket) => {
                 stocks: user.stocks,
                 debt: user.debt,
             },
+            activeContracts: activeContracts, // 新增：活躍合約列表
             leaderboard: leaderboard,
         };
 

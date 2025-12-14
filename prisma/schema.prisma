@@ -12,20 +12,20 @@ enum Role {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  password  String // Hashed
-  displayName String
-  avatar    String   @default("avatar_00.webp") // 新增：頭像欄位
-  cash      Float    @default(50.0)
-  stocks    Int      @default(0)
-  debt      Float     @default(0.0) 
-  role      Role     @default(USER)
-  firstSignIn Boolean  @default(true)
-  contractOrders ContractOrder[]  // 關聯：合約訂單
+  id              Int              @id @default(autoincrement())
+  username        String           @unique
+  password        String           // Hashed
+  displayName     String
+  avatar          String           @default("avatar_00.webp") // 新增：頭像欄位
+  cash            Float            @default(50.0)
+  stocks          Int              @default(0)
+  debt            Float            @default(0.0) 
+  role            Role             @default(USER)
+  firstSignIn     Boolean          @default(true)
+  contractOrders  ContractOrder[]  // 關聯：合約訂單
 
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 
@@ -40,6 +40,7 @@ model GameStatus {
   totalDays       Int       @default(120)     // 遊戲總天數 (預設 120 天)
   initialPrice    Float     @default(50.0)    // 股票起始價格
   initialCash     Float     @default(50.0)    // 使用者起始現金
+  maxLeverage     Float     @default(100.0)   // 合約交易最大槓桿倍數
 }
 
 model Event {
@@ -61,18 +62,20 @@ model ScriptDay {
 }
 
 model ContractOrder {
-  id        Int          @id @default(autoincrement())
-  userId    Int
-  user      User         @relation(fields: [userId], references: [id])
+  id           Int          @id @default(autoincrement())
+  userId       Int
+  user         User         @relation(fields: [userId], references: [id])
   
-  day       Int          // 下單時的遊戲天數 (Day X 下單，Day X+1 結算)
-  type      ContractType // LONG / SHORT
-  leverage  Float        // 1.0 ~ 10.0
-  quantity  Int          // 張數 (例如 1)
-  margin    Float        // 保證金 (下單時扣除的現金，例如 $20)金
+  day          Int          // 下單時的遊戲天數 (Day X 下單，Day X+1 結算)
+  type         ContractType // LONG / SHORT
+  leverage     Float        // 1.0 ~ 10.0
+  quantity     Int          // 張數 (例如 1)
+  margin       Float        // 保證金 (下單時扣除的現金，例如 $20)
+  entryPrice   Float        // 進場價格 (用於計算損益，CRITICAL)
   
-  isSettled Boolean      @default(false) // 是否已結算
-  createdAt DateTime     @default(now())
+  isSettled    Boolean      @default(false) // 是否已結算
+  isCancelled  Boolean      @default(false) // 是否已撤單
+  createdAt    DateTime     @default(now())
 }
 
 
