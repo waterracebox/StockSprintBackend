@@ -14,6 +14,7 @@ export interface GameState {
   timeRatio: number;
   initialPrice: number;
   initialCash: number;
+  maxLeverage: number;
 }
 
 /**
@@ -92,6 +93,7 @@ export async function getGameState(): Promise<GameState> {
       totalDays: 120,
       initialPrice: 50.0,
       initialCash: 50.0,
+      maxLeverage: 100.0,
     },
   });
 
@@ -105,6 +107,7 @@ export async function getGameState(): Promise<GameState> {
       timeRatio: gameStatus.timeRatio,
       initialPrice: gameStatus.initialPrice,
       initialCash: gameStatus.initialCash,
+      maxLeverage: gameStatus.maxLeverage,
     };
   }
 
@@ -129,6 +132,7 @@ export async function getGameState(): Promise<GameState> {
     timeRatio: gameStatus.timeRatio,
     initialPrice: gameStatus.initialPrice,
     initialCash: gameStatus.initialCash,
+    maxLeverage: gameStatus.maxLeverage,
   };
 }
 
@@ -175,6 +179,9 @@ export async function getLeaderboard(currentPrice: number): Promise<Array<{
   rank: number;
 }>> {
   try {
+    // 取得當前遊戲天數
+    const gameState = await getGameState();
+    
     // 僅查詢必要欄位，避免拉取密碼等敏感資料
     const users = await prisma.user.findMany({
       select: {
@@ -183,17 +190,41 @@ export async function getLeaderboard(currentPrice: number): Promise<Array<{
         avatar: true,
         cash: true,
         stocks: true,
+        debt: true,
       },
     });
 
-    // 計算每位使用者的總資產
-    const leaderboard = users.map((user) => ({
-      userId: user.id,
-      displayName: user.displayName,
-      avatar: user.avatar,
-      totalAssets: user.cash + (user.stocks * currentPrice), // 現金 + 股票現值
-      rank: 0, // 暫時為 0，稍後排序後賦值
-    }));
+    // 查詢所有用戶的活躍合約保證金
+    const activeContracts = await prisma.contractOrder.findMany({
+      where: {
+        day: gameState.currentDay,
+        isSettled: false,
+        isCancelled: false,
+      },
+      select: {
+        userId: true,
+        margin: true,
+      },
+    });
+
+    // 計算每個用戶的總保證金
+    const userMargins = new Map<number, number>();
+    activeContracts.forEach(contract => {
+      const current = userMargins.get(contract.userId) || 0;
+      userMargins.set(contract.userId, current + contract.margin);
+    });
+
+    // 計算每位使用者的總資產（現金 + 股票現值 + 合約保證金 - 負債）
+    const leaderboard = users.map((user) => {
+      const contractMargin = userMargins.get(user.id) || 0;
+      return {
+        userId: user.id,
+        displayName: user.displayName,
+        avatar: user.avatar,
+        totalAssets: user.cash + (user.stocks * currentPrice) + contractMargin - user.debt,
+        rank: 0,
+      };
+    });
 
     // 按總資產降冪排序
     leaderboard.sort((a, b) => b.totalAssets - a.totalAssets);

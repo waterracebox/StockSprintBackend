@@ -31,6 +31,19 @@ export interface PersonalAssets {
 }
 
 /**
+ * 活躍合約訂單
+ */
+export interface ActiveContract {
+  id: number;
+  type: string; // 'LONG' | 'SHORT'
+  leverage: number;
+  quantity: number;
+  margin: number;
+  entryPrice: number;
+  day: number;
+}
+
+/**
  * FULL_SYNC_STATE 事件的 Payload
  * 當客戶端連線或重連時，伺服器推送完整狀態
  */
@@ -40,12 +53,14 @@ export interface FullSyncPayload {
     countdown: number;
     isGameStarted: boolean;
     totalDays: number;
+    maxLeverage?: number; // 最大槓桿倍數（可選，向後相容）
   };
   price: {
     current: number; // 當前股價
     history: PriceHistoryItem[]; // 股價歷史
   };
   personal: PersonalAssets; // 個人資產
+  activeContracts: ActiveContract[]; // 活躍合約列表
   leaderboard: LeaderboardItem[]; // 排行榜資料
 }
 
@@ -65,6 +80,7 @@ export interface TradeResponse {
   amount: number; // 交易張數
   newCash: number; // 更新後的現金
   newStocks: number; // 更新後的持股數量
+  newDebt?: number; // 更新後的負債（可選）
 }
 
 /**
