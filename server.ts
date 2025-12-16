@@ -16,6 +16,8 @@ import { initializeGameLoop } from './src/gameLoop.js';
 import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData, getPriceHistory, getLeaderboard, getPastNews } from './src/services/gameService.js';
 // 交易處理器
 import { registerTradeHandlers } from './src/socket/tradeHandlers.js';
+// 【新增】借貸處理器
+import { registerLoanHandlers } from './src/socket/loanHandlers.js';
 // 共享資料庫連線
 import { prisma, pool } from "./src/db.js";
 // 型別定義
@@ -145,7 +147,7 @@ io.on("connection", async (socket) => {
         // 取得使用者的最新資產資料
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: { cash: true, stocks: true, debt: true },
+            select: { cash: true, stocks: true, debt: true, dailyBorrowed: true }, // 【新增】dailyBorrowed
         });
 
         if (!user) {
@@ -201,6 +203,8 @@ io.on("connection", async (socket) => {
                 isGameStarted: gameState.isGameStarted,
                 totalDays: gameState.totalDays,
                 maxLeverage: gameState.maxLeverage, // 新增：最大槓桿倍數
+                dailyInterestRate: gameState.dailyInterestRate, // 【新增】日利率
+                maxLoanAmount: gameState.maxLoanAmount,         // 【新增】每日最高借款額度
             },
             price: {
                 current: currentPrice,
@@ -216,6 +220,7 @@ io.on("connection", async (socket) => {
                 cash: user.cash,
                 stocks: user.stocks,
                 debt: user.debt,
+                dailyBorrowed: user.dailyBorrowed, // 【新增】當日已借金額
             },
             activeContracts: activeContracts, // 新增：活躍合約列表
             newsHistory: newsHistory, // 【新增】新聞歷史
@@ -234,6 +239,9 @@ io.on("connection", async (socket) => {
 
     // 註冊交易處理器 (CRITICAL: 必須在此處呼叫)
     registerTradeHandlers(io, socket);
+
+    // 【新增】註冊地下錢莊處理器
+    registerLoanHandlers(io, socket);
 
     // 處理斷線事件
     socket.on("disconnect", (reason) => {

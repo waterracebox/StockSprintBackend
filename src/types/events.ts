@@ -28,6 +28,7 @@ export interface PersonalAssets {
   cash: number; // 現金
   stocks: number; // 持股數量
   debt: number; // 負債金額
+  dailyBorrowed?: number; // 【新增】當日已借金額 (可選，向後相容)
 }
 
 /**
@@ -63,6 +64,8 @@ export interface FullSyncPayload {
     isGameStarted: boolean;
     totalDays: number;
     maxLeverage?: number; // 最大槓桿倍數（可選，向後相容）
+    dailyInterestRate?: number; // 【新增】日利率
+    maxLoanAmount?: number;     // 【新增】每日最高借款額度
   };
   price: {
     current: number; // 當前股價
@@ -85,12 +88,13 @@ export interface TradeRequest {
  * 交易成功回應 Payload
  */
 export interface TradeResponse {
-  action: 'BUY' | 'SELL'; // 交易動作
+  action: 'BUY' | 'SELL' | 'BUY_CONTRACT' | 'CANCEL_CONTRACT' | 'BORROW' | 'REPAY'; // 【新增】BORROW/REPAY
   price: number; // 成交價格
   amount: number; // 交易張數
   newCash: number; // 更新後的現金
-  newStocks: number; // 更新後的持股數量
+  newStocks?: number; // 更新後的持股數量
   newDebt?: number; // 更新後的負債（可選）
+  dailyBorrowed?: number; // 【新增】當日已借金額（可選）
 }
 
 /**

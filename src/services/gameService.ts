@@ -16,6 +16,8 @@ export interface GameState {
   initialPrice: number;
   initialCash: number;
   maxLeverage: number;
+  dailyInterestRate: number; // 【新增】日利率
+  maxLoanAmount: number;     // 【新增】每日最高借款額度
 }
 
 /**
@@ -95,6 +97,8 @@ export async function getGameState(): Promise<GameState> {
       initialPrice: 50.0,
       initialCash: 50.0,
       maxLeverage: 100.0,
+      dailyInterestRate: 0.0001,
+      maxLoanAmount: 1000,
     },
   });
 
@@ -109,6 +113,8 @@ export async function getGameState(): Promise<GameState> {
       initialPrice: gameStatus.initialPrice,
       initialCash: gameStatus.initialCash,
       maxLeverage: gameStatus.maxLeverage,
+      dailyInterestRate: gameStatus.dailyInterestRate,
+      maxLoanAmount: gameStatus.maxLoanAmount,
     };
   }
 
@@ -134,6 +140,8 @@ export async function getGameState(): Promise<GameState> {
     initialPrice: gameStatus.initialPrice,
     initialCash: gameStatus.initialCash,
     maxLeverage: gameStatus.maxLeverage,
+    dailyInterestRate: gameStatus.dailyInterestRate,
+    maxLoanAmount: gameStatus.maxLoanAmount,
   };
 }
 

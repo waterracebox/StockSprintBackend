@@ -94,6 +94,10 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
       // 更新追蹤變數
       updatePreviousDay(gameState.currentDay);
 
+      // ==================== 【新增】利息計算 & 每日額度重置 ====================
+      await applyDailyInterest(gameState.dailyInterestRate);
+      await resetDailyBorrowedLimit();
+
       // ==================== 合約結算（CRITICAL: 必須在 PRICE_UPDATE 前執行）====================
       await settleContracts(gameState.currentDay, io);
 
@@ -138,6 +142,9 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
       console.log(
         `[${new Date().toISOString()}] [Leaderboard] 排行榜已廣播，共 ${leaderboard.length} 名玩家`
       );
+
+      // ==================== 【新增】廣播資產更新給所有連線用戶 ====================
+      await broadcastAssetsUpdate(io);
     }
   } catch (error: any) {
     console.error(
@@ -146,7 +153,113 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
     );
   }
 }
+/**
+ * 【新增】每日利息計算 (複利)
+ * 公式: newDebt = oldDebt * (1 + dailyInterestRate)
+ * @param dailyInterestRate - 日利率
+ */
+async function applyDailyInterest(dailyInterestRate: number): Promise<void> {
+  try {
+    console.log(`[${new Date().toISOString()}] [Interest] 開始計算每日利息 (利率: ${(dailyInterestRate * 100).toFixed(4)}%)`);
 
+    // 查詢所有有負債的使用者
+    const usersWithDebt = await prisma.user.findMany({
+      where: { debt: { gt: 0 } },
+      select: { id: true, displayName: true, debt: true },
+    });
+
+    if (usersWithDebt.length === 0) {
+      console.log(`[${new Date().toISOString()}] [Interest] 無使用者有負債，跳過利息計算`);
+      return;
+    }
+
+    // 批次更新負債
+    const updates = usersWithDebt.map(async (user) => {
+      const newDebt = user.debt * (1 + dailyInterestRate);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { debt: newDebt },
+      });
+
+      console.log(
+        `[${new Date().toISOString()}] [Interest] 使用者 ${user.displayName} (${user.id}): ` +
+        `負債 $${user.debt.toFixed(2)} → $${newDebt.toFixed(2)} (利息 +$${(newDebt - user.debt).toFixed(2)})`
+      );
+    });
+
+    await Promise.all(updates);
+
+    console.log(`[${new Date().toISOString()}] [Interest] 利息計算完成，共更新 ${usersWithDebt.length} 位使用者`);
+  } catch (error: any) {
+    console.error(
+      `[${new Date().toISOString()}] [Interest] 利息計算錯誤:`,
+      error.message
+    );
+  }
+}
+
+/**
+ * 【新增】每日額度重置
+ * 將所有使用者的 dailyBorrowed 重置為 0
+ */
+async function resetDailyBorrowedLimit(): Promise<void> {
+  try {
+    console.log(`[${new Date().toISOString()}] [Limit] 開始重置每日借款額度`);
+
+    await prisma.user.updateMany({
+      data: { dailyBorrowed: 0 },
+    });
+
+    console.log(`[${new Date().toISOString()}] [Limit] 每日借款額度已重置`);
+  } catch (error: any) {
+    console.error(
+      `[${new Date().toISOString()}] [Limit] 重置額度錯誤:`,
+      error.message
+    );
+  }
+}
+
+/**
+ * 【新增】廣播資產更新給所有連線用戶
+ * 在換日後通知每個用戶其最新的資產狀態（特別是負債）
+ */
+async function broadcastAssetsUpdate(io: Server): Promise<void> {
+  try {
+    console.log(`[${new Date().toISOString()}] [AssetsUpdate] 開始廣播資產更新`);
+
+    // 獲取所有連線的 socket
+    const sockets = await io.fetchSockets();
+
+    for (const socket of sockets) {
+      const userId = (socket.data as any).userId;
+      
+      if (!userId) continue;
+
+      // 查詢該用戶的最新資產
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { cash: true, stocks: true, debt: true, dailyBorrowed: true },
+      });
+
+      if (user) {
+        // 向該用戶推送資產更新
+        socket.emit('ASSETS_UPDATE', {
+          cash: user.cash,
+          stocks: user.stocks,
+          debt: user.debt,
+          dailyBorrowed: user.dailyBorrowed,
+        });
+      }
+    }
+
+    console.log(`[${new Date().toISOString()}] [AssetsUpdate] 資產更新已廣播給 ${sockets.length} 位用戶`);
+  } catch (error: any) {
+    console.error(
+      `[${new Date().toISOString()}] [AssetsUpdate] 廣播資產更新錯誤:`,
+      error.message
+    );
+  }
+}
 /**
  * 合約結算函式（換日時觸發）
  * @param newDay - 新的遊戲天數
