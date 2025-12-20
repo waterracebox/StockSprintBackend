@@ -14,6 +14,9 @@ import type { TradeResponse, TradeError } from '../types/events.js';
 export function registerLoanHandlers(io: Server, socket: Socket): void {
   const { userId } = socket.data;
 
+  const isPositiveAmount = (amount: number) => Number.isFinite(amount) && amount > 0;
+  const roundToCents = (amount: number) => Math.round(amount * 100) / 100;
+
   /**
    * 借款事件
    * Payload: { amount: number }
@@ -22,12 +25,14 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
     try {
       console.log(`[${new Date().toISOString()}] [Loan] 使用者 ${userId} 借款請求: $${payload.amount}`);
 
-      // 1. 驗證請求參數
-      if (!Number.isInteger(payload.amount) || payload.amount <= 0) {
-        const error: TradeError = { message: '借款金額必須為正整數' };
+      // 1. 驗證請求參數（允許小數，取到小數點後兩位）
+      if (!isPositiveAmount(payload.amount)) {
+        const error: TradeError = { message: '借款金額必須大於 0' };
         socket.emit('TRADE_ERROR', error);
         return;
       }
+
+      const normalizedAmount = roundToCents(payload.amount);
 
       // 2. 【新增】檢查遊戲狀態
       const gameState = await getGameState();
@@ -50,7 +55,7 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
         }
 
         // 檢查每日額度
-        if (user.dailyBorrowed + payload.amount > gameState.maxLoanAmount) {
+        if (user.dailyBorrowed + normalizedAmount > gameState.maxLoanAmount) {
           throw new Error(`今日借款額度不足 (已借 ${user.dailyBorrowed} / ${gameState.maxLoanAmount})`);
         }
 
@@ -58,9 +63,9 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
         const updatedUser = await tx.user.update({
           where: { id: userId },
           data: {
-            cash: { increment: payload.amount },
-            debt: { increment: payload.amount },
-            dailyBorrowed: { increment: payload.amount },
+            cash: { increment: normalizedAmount },
+            debt: { increment: normalizedAmount },
+            dailyBorrowed: { increment: normalizedAmount },
           },
           select: { cash: true, debt: true, dailyBorrowed: true },
         });
@@ -72,7 +77,7 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
       const response: TradeResponse = {
         action: 'BORROW',
         price: 0, // 不涉及股價
-        amount: payload.amount,
+        amount: normalizedAmount,
         newCash: result.cash,
         newDebt: result.debt,
         dailyBorrowed: result.dailyBorrowed, // 【新增】當日已借金額
@@ -81,7 +86,7 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
       socket.emit('TRADE_SUCCESS', response);
 
       console.log(
-        `[${new Date().toISOString()}] [Loan] 使用者 ${userId} 成功借款 $${payload.amount}，當日已借 ${result.dailyBorrowed}`
+        `[${new Date().toISOString()}] [Loan] 使用者 ${userId} 成功借款 $${normalizedAmount}，當日已借 ${result.dailyBorrowed}`
       );
     } catch (error: any) {
       const errorResponse: TradeError = { message: error.message || '借款失敗' };
@@ -102,12 +107,14 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
     try {
       console.log(`[${new Date().toISOString()}] [Loan] 使用者 ${userId} 還款請求: $${payload.amount}`);
 
-      // 1. 驗證請求參數
-      if (!Number.isInteger(payload.amount) || payload.amount <= 0) {
-        const error: TradeError = { message: '還款金額必須為正整數' };
+      // 1. 驗證請求參數（允許小數，取到小數點後兩位）
+      if (!isPositiveAmount(payload.amount)) {
+        const error: TradeError = { message: '還款金額必須大於 0' };
         socket.emit('TRADE_ERROR', error);
         return;
       }
+
+      const normalizedAmount = roundToCents(payload.amount);
 
       // 2. 【新增】檢查遊戲狀態
       const gameState = await getGameState();
@@ -130,12 +137,12 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
         }
 
         // 檢查現金是否足夠
-        if (user.cash < payload.amount) {
+        if (user.cash < normalizedAmount) {
           throw new Error('現金不足');
         }
 
         // 計算實際還款金額（不超過負債總額）
-        const actualRepayAmount = Math.min(payload.amount, user.debt);
+        const actualRepayAmount = Math.min(normalizedAmount, user.debt);
 
         // 更新使用者資產
         const updatedUser = await tx.user.update({
