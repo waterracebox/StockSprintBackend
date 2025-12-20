@@ -10,6 +10,9 @@ import {
   updateParamsHandler,
   getParamsHandler,
   getMonitorHistoryHandler,
+  getUsersHandler,         // 新增
+  updateUserHandler,       // 新增
+  deleteUserHandler,       // 新增
 } from '../controllers/adminController.js';
 
 const router = Router();
@@ -28,6 +31,11 @@ router.post('/game/reset', resetGameHandler);
 // 參數管理
 router.get('/params', getParamsHandler);
 router.put('/params', updateParamsHandler);
+
+// 使用者管理（新增）
+router.get('/users', getUsersHandler);
+router.put('/users/:id', updateUserHandler);
+router.delete('/users/:id', deleteUserHandler);
 
 // 監控服務
 router.get('/monitor/history', getMonitorHistoryHandler);

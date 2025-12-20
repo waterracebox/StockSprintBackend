@@ -220,3 +220,206 @@ export async function getMonitorHistoryHandler(req: Request, res: Response): Pro
     res.status(500).json({ error: '取得監控歷史失敗' });
   }
 }
+
+/**
+ * 取得使用者列表（含搜尋與分頁）
+ * GET /api/admin/users
+ */
+export async function getUsersHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const { prisma } = await import('../db.js');
+    
+    // 取得查詢參數
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = (req.query.search as string)?.trim() || '';
+
+    // 計算跳過的筆數
+    const skip = (page - 1) * limit;
+
+    // 建立搜尋條件（大小寫不敏感）
+    const whereClause = search
+      ? {
+          OR: [
+            { username: { contains: search, mode: 'insensitive' as const } },
+            { displayName: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {};
+
+    // 查詢使用者列表
+    const [users, totalCount] = await Promise.all([
+      prisma.user.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          cash: true,
+          stocks: true,
+          debt: true,
+          firstSignIn: true,
+          role: true,
+        },
+        skip,
+        take: limit,
+        orderBy: { id: 'asc' },
+      }),
+      prisma.user.count({ where: whereClause }),
+    ]);
+
+    // 計算總頁數
+    const totalPages = Math.ceil(totalCount / limit);
+
+    res.json({
+      users,
+      currentPage: page,
+      totalPages,
+      totalCount,
+    });
+
+    console.log(`[${new Date().toISOString()}] [Admin] 取得使用者列表: 第 ${page} 頁，共 ${totalCount} 筆`);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Admin] 取得使用者列表失敗:`, error.message);
+    res.status(500).json({ error: '取得使用者列表失敗' });
+  }
+}
+
+/**
+ * 更新使用者資料
+ * PUT /api/admin/users/:id
+ */
+export async function updateUserHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const { prisma } = await import('../db.js');
+    const userId = parseInt(req.params.id);
+    const { displayName, cash, stocks, debt, firstSignIn, password } = req.body;
+
+    // 驗證 userId
+    if (isNaN(userId)) {
+      res.status(400).json({ error: '無效的使用者 ID' });
+      return;
+    }
+
+    // 檢查使用者是否存在
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
+
+    if (!existingUser) {
+      res.status(404).json({ error: '使用者不存在' });
+      return;
+    }
+
+    // 建立更新資料物件
+    const updateData: any = {
+      displayName: displayName?.trim(),
+      cash: parseFloat(cash),
+      stocks: parseInt(stocks),
+      debt: parseFloat(debt),
+      firstSignIn: firstSignIn === true || firstSignIn === 'true',
+    };
+
+    // 若提供密碼且非空，則雜湊後更新
+    if (password && password.trim() !== '') {
+      const bcrypt = (await import('bcryptjs')).default;
+      updateData.password = await bcrypt.hash(password.trim(), 10);
+      console.log(`[${new Date().toISOString()}] [Admin] 使用者 ${userId} 密碼已重設`);
+    }
+
+    // 更新使用者
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        cash: true,
+        stocks: true,
+        debt: true,
+        firstSignIn: true,
+      },
+    });
+
+    // 廣播更新給該使用者（如果正在線上）
+    const io = getGlobalIO();
+    io.emit('USER_DATA_UPDATED', {
+      userId: updatedUser.id,
+      displayName: updatedUser.displayName,
+      cash: updatedUser.cash,
+      stocks: updatedUser.stocks,
+      debt: updatedUser.debt,
+      firstSignIn: updatedUser.firstSignIn,
+    });
+
+    res.json({ message: '使用者資料已更新', user: updatedUser });
+
+    console.log(`[${new Date().toISOString()}] [Admin] 使用者 ${userId} (${existingUser.username}) 資料已更新`);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Admin] 更新使用者失敗:`, error.message);
+    res.status(500).json({ error: '更新使用者失敗' });
+  }
+}
+
+/**
+ * 刪除使用者
+ * DELETE /api/admin/users/:id
+ */
+export async function deleteUserHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const { prisma } = await import('../db.js');
+    const userId = parseInt(req.params.id);
+
+    // 驗證 userId
+    if (isNaN(userId)) {
+      res.status(400).json({ error: '無效的使用者 ID' });
+      return;
+    }
+
+    // 檢查使用者是否存在
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true, role: true },
+    });
+
+    if (!existingUser) {
+      res.status(404).json({ error: '使用者不存在' });
+      return;
+    }
+
+    // 防止刪除管理員（可選，根據需求調整）
+    if (existingUser.role === 'ADMIN') {
+      res.status(403).json({ error: '無法刪除管理員帳號' });
+      return;
+    }
+
+    // 使用 Transaction 確保資料一致性
+    await prisma.$transaction(async (tx) => {
+      // 1. 刪除該使用者的所有合約
+      await tx.contractOrder.deleteMany({
+        where: { userId },
+      });
+
+      // 2. 刪除使用者
+      await tx.user.delete({
+        where: { id: userId },
+      });
+    });
+
+    // 廣播強制登出事件給該使用者（如果正在線上）
+    const io = getGlobalIO();
+    io.emit('FORCE_LOGOUT', {
+      userId,
+      reason: '您的帳號已被管理員刪除',
+    });
+
+    res.json({ message: '使用者已刪除' });
+
+    console.log(`[${new Date().toISOString()}] [Admin] 使用者 ${userId} (${existingUser.username}) 已刪除`);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Admin] 刪除使用者失敗:`, error.message);
+    res.status(500).json({ error: '刪除使用者失敗' });
+  }
+}

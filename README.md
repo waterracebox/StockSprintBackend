@@ -247,7 +247,40 @@ Invoke-RestMethod -Uri "https://stock-sprint-backend.onrender.com/api/admin/star
 
 ### Admin API 開發工具
 
-**快進遊戲天數：**
+**重要提醒：** 以下舊版 Admin API 已被棄用。請使用前端 Admin Dashboard (`/admin` 路由) 進行遊戲管理，或使用以下帶認證的 API。
+
+**快進遊戲天數（需認證）：**
+
+首先需要獲取 Admin JWT Token：
+
+```powershell
+# 1. 登入取得 Token
+$loginResponse = Invoke-RestMethod -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/auth/login" -ContentType "application/json" -Body '{"username":"admin","password":"your_admin_password"}'
+$token = $loginResponse.token
+
+# 2. 使用 Token 調用 Admin API（示例：獲取遊戲參數）
+Invoke-RestMethod -Method GET -Uri "https://stock-sprint-backend.onrender.com/api/admin/params" -Headers @{Authorization="Bearer $token"}
+```
+
+**可用的 Admin API 端點：**
+
+```powershell
+# 遊戲控制
+POST /api/admin/game/start     # 開始遊戲
+POST /api/admin/game/stop      # 暫停遊戲
+POST /api/admin/game/resume    # 恢復遊戲
+POST /api/admin/game/restart   # 重啟遊戲（重置玩家進度）
+POST /api/admin/game/reset     # 工廠重置
+
+# 參數管理
+GET  /api/admin/params         # 獲取遊戲參數
+PUT  /api/admin/params         # 更新遊戲參數
+
+# 監控服務
+GET  /api/admin/monitor/history # 獲取線上人數歷史
+```
+
+**舊版開發工具（無需認證，僅用於除錯）：**
 
 用於開發測試，快速跳轉到指定天數（例如第 80 天）：
 
@@ -255,11 +288,11 @@ Invoke-RestMethod -Uri "https://stock-sprint-backend.onrender.com/api/admin/star
 # 本地環境
 Invoke-WebRequest -Method POST -Uri "http://localhost:8000/api/admin/fast-forward" -ContentType "application/json" -Body '{"targetDay": 80}'
 
-# 遠端環境
-Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/admin/fast-forward" -ContentType "application/json" -Body '{"targetDay": 80}'
+# 遠端環境（已棄用）
+# Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/admin/fast-forward" -ContentType "application/json" -Body '{"targetDay": 80}'
 ```
 
-**重新載入劇本資料：**
+**重新載入劇本資料（無需認證，僅用於除錯）：**
 
 當直接修改資料庫的 `ScriptDay` 資料後，可透過此 API 重新載入到記憶體（無需重啟伺服器）：
 
@@ -267,6 +300,6 @@ Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/a
 # 本地環境
 Invoke-WebRequest -Method POST -Uri "http://localhost:8000/api/admin/script/reload"
 
-# 遠端環境
-Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/admin/script/reload"
+# 遠端環境（已棄用）
+# Invoke-WebRequest -Method POST -Uri "https://stock-sprint-backend.onrender.com/api/admin/script/reload"
 ```
