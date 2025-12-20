@@ -29,8 +29,13 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 2. 取得遊戲參數
+      // 2. 【新增】檢查遊戲狀態
       const gameState = await getGameState();
+      if (!gameState.isGameStarted) {
+        const error: TradeError = { message: '遊戲未開始，無法借款' };
+        socket.emit('TRADE_ERROR', error);
+        return;
+      }
 
       // 3. 使用 Transaction 確保原子性
       const result = await prisma.$transaction(async (tx) => {
@@ -104,7 +109,15 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      // 2. 使用 Transaction 確保原子性
+      // 2. 【新增】檢查遊戲狀態
+      const gameState = await getGameState();
+      if (!gameState.isGameStarted) {
+        const error: TradeError = { message: '遊戲未開始，無法還款' };
+        socket.emit('TRADE_ERROR', error);
+        return;
+      }
+
+      // 3. 使用 Transaction 確保原子性
       const result = await prisma.$transaction(async (tx) => {
         // 查詢使用者資料
         const user = await tx.user.findUnique({

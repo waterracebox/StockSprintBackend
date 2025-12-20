@@ -34,6 +34,7 @@ model GameStatus {
   id              Int       @id @default(1) // 全域狀態，永遠只有 id: 1 這一筆
   isGameStarted   Boolean   @default(false)
   gameStartTime   DateTime? // 核心：遊戲開始的絕對時間，用於計算精確進度
+  pausedAt        DateTime? // 【新增】暫停時間戳記
   
   // 遊戲配置參數 (動態載入)
   currentDay      Int       @default(0)
@@ -41,11 +42,11 @@ model GameStatus {
   totalDays       Int       @default(120)     // 遊戲總天數 (預設 120 天)
   initialPrice    Float     @default(50.0)    // 股票起始價格
   initialCash     Float     @default(50.0)    // 使用者起始現金
-  maxLeverage     Float     @default(100.0)   // 合約交易最大槓桿倍數
+  maxLeverage     Float     @default(10.0)    // 合約交易最大槓桿倍數 (改為 10.0)
   
   // 【新增】地下錢莊參數
   dailyInterestRate Float   @default(0.0001)  // 日利率 (預設 0.01%)
-  maxLoanAmount     Int     @default(1000)    // 每日最高借款額度
+  maxLoanAmount     Int     @default(10000)   // 最高借款金額 (改為 10000)
 }
 
 model Event {
@@ -67,6 +68,7 @@ model ScriptDay {
   news              String? @db.Text 
   effectiveTrend    String  // 當天 "實際生效" 的趨勢
   publishTimeOffset Int?    // 新聞發布的秒數偏移量 (0~59)，由演算法隨機產生
+  isNewsBroadcasted Boolean @default(false) // 【新增】是否已廣播過新聞
 }
 
 model ContractOrder {

@@ -2,7 +2,7 @@
 
 import { Server } from 'socket.io';
 import { prisma } from './db.js';
-import { getGameState, getCurrentStockData, getPriceHistory, getLeaderboard } from './services/gameService.js';
+import { getGameState, getCurrentStockData, getPriceHistory, getLeaderboard, markNewsAsBroadcasted } from './services/gameService.js';
 import type { PriceUpdatePayload, LeaderboardUpdatePayload, NewsUpdatePayload } from './types/events.js';
 
 /**
@@ -19,10 +19,18 @@ export function initializeGameLoop(io: Server): void {
   setInterval(async () => {
     const gameState = await getGameState();
     
-    // 偵測遊戲重新啟動：從 false → true
+    // 【修正】偵測遊戲重新啟動：從 false → true
     if (!wasGameStarted && gameState.isGameStarted) {
-      console.log(`[${new Date().toISOString()}] [GameLoop] 遊戲已重新啟動，重置 previousDay`);
-      previousDay = -1; // 重置為 -1，讓 Day 1 能正常觸發 PRICE_UPDATE
+      // 檢查是否是「恢復遊戲」（currentDay > 0）還是「首次啟動」（currentDay = 0 或 1）
+      if (gameState.currentDay <= 1) {
+        // 首次啟動：重置 previousDay 為 -1，讓 Day 1 能正常觸發換日事件
+        console.log(`[${new Date().toISOString()}] [GameLoop] 遊戲首次啟動，重置 previousDay`);
+        previousDay = -1;
+      } else {
+        // 恢復遊戲：保留當前天數作為 previousDay，避免誤觸發換日
+        console.log(`[${new Date().toISOString()}] [GameLoop] 遊戲已恢復（Day ${gameState.currentDay}），保留 previousDay`);
+        previousDay = gameState.currentDay;
+      }
     }
     
     wasGameStarted = gameState.isGameStarted;
@@ -54,6 +62,8 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
       countdown: gameState.countdown,
       totalDays: gameState.totalDays,
       maxLeverage: gameState.maxLeverage, // 新增：最大槓桿倍數
+      dailyInterestRate: gameState.dailyInterestRate, // 【新增】日利率
+      maxLoanAmount: gameState.maxLoanAmount,         // 【新增】每日最高借款額度
     });
 
     // ==================== 【新增】檢查新聞發布時機 ====================
@@ -61,25 +71,49 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
       const currentData = getCurrentStockData(gameState.currentDay);
       
       if (currentData && currentData.title && currentData.publishTimeOffset !== null) {
-        // 計算當日經過的秒數
-        const gameStatusRecord = await prisma.gameStatus.findUnique({ where: { id: 1 } });
-        if (gameStatusRecord && gameStatusRecord.gameStartTime) {
-          const elapsedTime = Date.now() - gameStatusRecord.gameStartTime.getTime();
-          const currentSecondInDay = Math.floor((elapsedTime / 1000) % gameState.timeRatio);
+        // 【第一道防線】檢查是否已經廣播過
+        if (!currentData.isNewsBroadcasted) {
+          // 計算當日經過的秒數
+          const gameStatusRecord = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+          if (gameStatusRecord && gameStatusRecord.gameStartTime) {
+            const elapsedTime = Date.now() - gameStatusRecord.gameStartTime.getTime();
+            const currentSecondInDay = Math.floor((elapsedTime / 1000) % gameState.timeRatio);
 
-          // 若當前秒數等於新聞發布時間偏移量，則廣播新聞
-          if (currentSecondInDay === currentData.publishTimeOffset) {
-            const newsPayload: NewsUpdatePayload = {
-              day: currentData.day,
-              title: currentData.title,
-              content: currentData.news || '',
-            };
+            // 【動態校準】計算實際觸發時間
+            let actualPublishTime = currentData.publishTimeOffset;
+            
+            // 規則 A (正常情況)：offset < timeRatio，使用原始時間
+            // 規則 B (時間被縮短)：offset >= timeRatio，設為第 1 秒
+            if (actualPublishTime >= gameState.timeRatio) {
+              actualPublishTime = Math.min(1, gameState.timeRatio - 1);
+              console.log(
+                `[${new Date().toISOString()}] [News] Day ${currentData.day} 原定時間 ${currentData.publishTimeOffset} 超過 timeRatio ${gameState.timeRatio}，調整為 ${actualPublishTime}`
+              );
+            }
 
-            io.emit('NEWS_UPDATE', newsPayload);
+            // 【區間判斷】使用 >= 防止跳秒或時間縮短導致錯過
+            if (currentSecondInDay >= actualPublishTime) {
+              const newsPayload: NewsUpdatePayload = {
+                day: currentData.day,
+                title: currentData.title,
+                content: currentData.news || '',
+              };
 
-            console.log(
-              `[${new Date().toISOString()}] [News] Day ${currentData.day} 新聞已廣播: ${currentData.title}`
-            );
+              io.emit('NEWS_UPDATE', newsPayload);
+
+              // 【狀態鎖定】立即更新 DB 和記憶體，標記為已廣播
+              await prisma.scriptDay.update({
+                where: { id: currentData.id },
+                data: { isNewsBroadcasted: true },
+              });
+              
+              // 同步更新記憶體中的狀態
+              markNewsAsBroadcasted(currentData.id);
+
+              console.log(
+                `[${new Date().toISOString()}] [News] Day ${currentData.day} 新聞已廣播並鎖定: ${currentData.title} (觸發時間: ${actualPublishTime}s, 當前: ${currentSecondInDay}s)`
+              );
+            }
           }
         }
       }
@@ -93,6 +127,33 @@ async function tick(io: Server, previousDay: number, updatePreviousDay: (newDay:
 
       // 更新追蹤變數
       updatePreviousDay(gameState.currentDay);
+
+      // 【新增】檢查是否達到最高天數，自動停止遊戲
+      if (gameState.currentDay >= gameState.totalDays) {
+        console.log(
+          `[${new Date().toISOString()}] [GameEnd] 遊戲已達到最高天數 (Day ${gameState.totalDays})，自動停止`
+        );
+        await prisma.gameStatus.update({
+          where: { id: 1 },
+          data: {
+            isGameStarted: false,
+            pausedAt: new Date(),
+          },
+        });
+        
+        // 廣播遊戲結束狀態
+        io.emit('GAME_STATE_UPDATE', {
+          currentDay: gameState.currentDay,
+          isGameStarted: false,
+          countdown: 0,
+          totalDays: gameState.totalDays,
+          maxLeverage: gameState.maxLeverage,
+          dailyInterestRate: gameState.dailyInterestRate, // 【新增】
+          maxLoanAmount: gameState.maxLoanAmount,         // 【新增】
+        });
+        
+        return; // 停止後續處理
+      }
 
       // ==================== 【新增】利息計算 & 每日額度重置 ====================
       await applyDailyInterest(gameState.dailyInterestRate);

@@ -8,6 +8,8 @@ import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 // 驗證路由
 import authRoutes from "./src/routes/authRoutes.js";
+// 【新增】Admin 路由
+import adminRoutes from "./src/routes/adminRoutes.js";
 // Socket 認證中介軟體
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 遊戲迴圈
@@ -18,6 +20,10 @@ import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData,
 import { registerTradeHandlers } from './src/socket/tradeHandlers.js';
 // 【新增】借貸處理器
 import { registerLoanHandlers } from './src/socket/loanHandlers.js';
+// 【新增】監控服務
+import { initializeMonitor } from './src/services/monitorService.js';
+// 【新增】IO 管理器
+import { setGlobalIO } from './src/ioManager.js';
 // 共享資料庫連線
 import { prisma, pool } from "./src/db.js";
 // 型別定義
@@ -32,6 +38,9 @@ app.use(express.json());
 
 // 掛載驗證路由
 app.use("/api/auth", authRoutes);
+
+// 【新增】掛載 Admin 路由
+app.use("/api/admin", adminRoutes);
 
 // Admin 測試路由 (開發用)
 app.get("/api/admin/start-test", async (req, res) => {
@@ -135,8 +144,14 @@ const io = new SocketIOServer(httpServer, {
     },
 });
 
+// 【新增】設置全域 IO 實例
+setGlobalIO(io);
+
 // 套用 Socket.io 認證中介軟體
 socketAuthMiddleware(io);
+
+// 【新增】啟動監控服務
+initializeMonitor(io);
 
 // Socket.io 連線事件
 io.on("connection", async (socket) => {

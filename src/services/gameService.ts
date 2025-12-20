@@ -9,6 +9,7 @@ import type { NewsItem } from '../types/events.js';
  */
 export interface GameState {
   isGameStarted: boolean;
+  pausedAt: Date | null;
   currentDay: number;
   countdown: number; // 距離下一天的秒數
   totalDays: number;
@@ -68,6 +69,18 @@ export function getCurrentStockData(day: number): ScriptDay | null {
 }
 
 /**
+ * 【新增】更新記憶體中的新聞廣播狀態
+ * @param scriptId - ScriptDay 記錄的 ID
+ */
+export function markNewsAsBroadcasted(scriptId: number): void {
+  const record = scriptData.find(d => d.id === scriptId);
+  if (record) {
+    record.isNewsBroadcasted = true;
+    console.log(`[記憶體] ScriptDay ${scriptId} (Day ${record.day}) 新聞狀態已更新`);
+  }
+}
+
+/**
  * 取得股價歷史資料（從 Day 1 到當前天）
  * @param currentDay - 當前遊戲天數
  * @returns 歷史股價陣列（依天數排序）
@@ -76,7 +89,16 @@ export function getPriceHistory(currentDay: number): ScriptDay[] {
   if (currentDay <= 0) {
     return []; // 遊戲未開始，無歷史資料
   }
-  return scriptData.filter(d => d.day <= currentDay);
+  
+  // 返回歷史資料，但對於未廣播的新聞，隱藏 title 和 news
+  return scriptData
+    .filter(d => d.day <= currentDay)
+    .map(d => ({
+      ...d,
+      // 若新聞尚未廣播，隱藏 title 和 news
+      title: d.isNewsBroadcasted ? d.title : null,
+      news: d.isNewsBroadcasted ? d.news : null,
+    }));
 }
 
 /**
@@ -102,10 +124,11 @@ export async function getGameState(): Promise<GameState> {
     },
   });
 
-  // 若遊戲未開始，直接返回 Day 0
-  if (!gameStatus.isGameStarted || !gameStatus.gameStartTime) {
+  // 【修正】若遊戲未開始且沒有 pausedAt（從未啟動過），直接返回 Day 0
+  if (!gameStatus.isGameStarted && !gameStatus.pausedAt && !gameStatus.gameStartTime) {
     return {
       isGameStarted: false,
+      pausedAt: null,
       currentDay: 0,
       countdown: 0,
       totalDays: gameStatus.totalDays,
@@ -118,8 +141,13 @@ export async function getGameState(): Promise<GameState> {
     };
   }
 
+  // 【修正】若遊戲暫停，使用 pausedAt 時間計算天數（凍結狀態）
+  const referenceTime = gameStatus.pausedAt 
+    ? gameStatus.pausedAt.getTime() 
+    : Date.now();
+
   // 計算經過時間 (毫秒)
-  const elapsedTime = Date.now() - gameStatus.gameStartTime.getTime();
+  const elapsedTime = referenceTime - (gameStatus.gameStartTime?.getTime() || 0);
   
   // 計算當前天數 (公式：經過秒數 / 每天秒數 + 1)
   const calculatedDay = Math.floor(elapsedTime / (gameStatus.timeRatio * 1000)) + 1;
@@ -132,7 +160,8 @@ export async function getGameState(): Promise<GameState> {
   const finalCountdown = calculatedDay > gameStatus.totalDays ? 0 : countdown;
 
   return {
-    isGameStarted: true,
+    isGameStarted: gameStatus.isGameStarted,
+    pausedAt: gameStatus.pausedAt,
     currentDay,
     countdown: finalCountdown,
     totalDays: gameStatus.totalDays,
@@ -150,29 +179,254 @@ export async function getGameState(): Promise<GameState> {
  * 設定 isGameStarted=true 並記錄遊戲開始時間
  */
 export async function startGame(): Promise<void> {
-  await prisma.gameStatus.update({
-    where: { id: 1 },
-    data: {
-      isGameStarted: true,
-      gameStartTime: new Date(),
-      currentDay: 0, // 重置天數
-    },
+  await prisma.$transaction(async (tx) => {
+    // 更新遊戲狀態
+    await tx.gameStatus.update({
+      where: { id: 1 },
+      data: {
+        isGameStarted: true,
+        gameStartTime: new Date(),
+        pausedAt: null, // 【修正】清除暫停狀態
+        currentDay: 0, // 重置天數
+      },
+    });
+
+    // 【新增】重置所有新聞的廣播狀態
+    await tx.scriptDay.updateMany({
+      data: { isNewsBroadcasted: false },
+    });
   });
-  console.log(`[${new Date().toISOString()}] [Game] 遊戲已開始`);
+
+  // 【新增】重新載入記憶體中的劇本資料，確保狀態一致
+  await loadScriptData();
+
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲已開始（記憶體已同步）`);
 }
 
 /**
- * 結束遊戲
- * 設定 isGameStarted=false
+ * 結束遊戲（暫停）
+ * 設定 isGameStarted=false 並記錄 pausedAt
  */
 export async function stopGame(): Promise<void> {
   await prisma.gameStatus.update({
     where: { id: 1 },
     data: {
       isGameStarted: false,
+      pausedAt: new Date(), // 【新增】記錄暫停時間
     },
   });
-  console.log(`[${new Date().toISOString()}] [Game] 遊戲已結束`);
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲已暫停`);
+}
+
+/**
+ * 恢復遊戲（從暫停狀態繼續）
+ * 修正 gameStartTime 以補償暫停期間
+ */
+export async function resumeGame(): Promise<void> {
+  const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+
+  if (!gameStatus) {
+    throw new Error('遊戲狀態不存在');
+  }
+
+  if (gameStatus.isGameStarted) {
+    throw new Error('遊戲已在運行中');
+  }
+
+  if (!gameStatus.pausedAt) {
+    throw new Error('遊戲未處於暫停狀態');
+  }
+
+  // 計算暫停期間
+  const pauseDuration = Date.now() - gameStatus.pausedAt.getTime();
+
+  // 修正 gameStartTime（向後推移暫停時長）
+  const newGameStartTime = new Date(
+    (gameStatus.gameStartTime?.getTime() || 0) + pauseDuration
+  );
+
+  await prisma.gameStatus.update({
+    where: { id: 1 },
+    data: {
+      isGameStarted: true,
+      gameStartTime: newGameStartTime,
+      pausedAt: null,
+    },
+  });
+
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲已恢復`);
+}
+
+/**
+ * 重新開始遊戲（重置玩家進度但保留劇本）
+ * 前提：遊戲必須處於停止狀態
+ */
+export async function restartGame(): Promise<void> {
+  const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+
+  if (gameStatus?.isGameStarted) {
+    throw new Error('請先停止遊戲再執行重啟');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // 重置遊戲狀態
+    await tx.gameStatus.update({
+      where: { id: 1 },
+      data: {
+        currentDay: 0,
+        gameStartTime: null,
+        pausedAt: null,
+        isGameStarted: false,
+      },
+    });
+
+    // 重置所有玩家資產
+    await tx.user.updateMany({
+      data: {
+        cash: gameStatus?.initialCash || 50,
+        stocks: 0,
+        debt: 0,
+        dailyBorrowed: 0,
+        firstSignIn: false,
+      },
+    });
+
+    // 刪除所有合約
+    await tx.contractOrder.deleteMany({});
+
+    // 【新增】重置所有新聞的廣播狀態
+    await tx.scriptDay.updateMany({
+      data: { isNewsBroadcasted: false },
+    });
+  });
+
+  // 【新增】重新載入記憶體中的劇本資料，確保狀態一致
+  await loadScriptData();
+
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲已重啟（記憶體已同步）`);
+}
+
+/**
+ * 重置遊戲（工廠設定，清除所有資料）
+ * 前提：遊戲必須處於停止狀態
+ */
+export async function resetGame(currentUserId: number): Promise<void> {
+  const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+
+  if (gameStatus?.isGameStarted) {
+    throw new Error('請先停止遊戲再執行重置');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // 刪除合約、劇本、事件
+    await tx.contractOrder.deleteMany({});
+    await tx.scriptDay.deleteMany({}); // 刪除劇本（包含新聞狀態）
+    await tx.event.deleteMany({});
+
+    // 刪除非 Admin 和非當前使用者的所有使用者
+    await tx.user.deleteMany({
+      where: {
+        AND: [
+          { role: { not: 'ADMIN' } },
+          { id: { not: currentUserId } },
+        ],
+      },
+    });
+
+    // 重置遊戲狀態為預設值
+    await tx.gameStatus.update({
+      where: { id: 1 },
+      data: {
+        isGameStarted: false,
+        gameStartTime: null,
+        pausedAt: null,
+        currentDay: 0,
+        timeRatio: 60,
+        totalDays: 120,
+        initialPrice: 50.0,
+        initialCash: 50.0,
+        maxLeverage: 10.0,
+        dailyInterestRate: 0.0001,
+        maxLoanAmount: 10000,
+      },
+    });
+  });
+
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲已重置（工廠設定）`);
+}
+
+/**
+ * 更新遊戲參數
+ * 當 timeRatio 改變時，重新計算 gameStartTime 以保持遊戲進度
+ */
+export async function updateGameParams(params: {
+  timeRatio?: number;
+  totalDays?: number;
+  initialPrice?: number;
+  initialCash?: number;
+  maxLeverage?: number;
+  dailyInterestRate?: number;
+  maxLoanAmount?: number;
+}): Promise<void> {
+  const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+
+  if (!gameStatus) {
+    throw new Error('遊戲狀態不存在');
+  }
+
+  let newGameStartTime = gameStatus.gameStartTime;
+
+  // 【修正】若 timeRatio 改變且遊戲已啟動過，需重新計算 gameStartTime
+  if (params.timeRatio && gameStatus.gameStartTime) {
+    // 使用 pausedAt 或當前時間作為參考點
+    const now = gameStatus.pausedAt ? gameStatus.pausedAt.getTime() : Date.now();
+    const oldElapsed = now - gameStatus.gameStartTime.getTime();
+    const oldRatioMs = gameStatus.timeRatio * 1000;
+    
+    // 計算已完成天數（不含當前天）
+    const completedDays = Math.floor(oldElapsed / oldRatioMs);
+    
+    // 當前天已經過的秒數（passedSeconds）
+    const passedMs = oldElapsed % oldRatioMs;
+    const passedSeconds = Math.floor(passedMs / 1000);
+    
+    // 當前天剩餘秒數
+    const oldRemainingSeconds = gameStatus.timeRatio - passedSeconds;
+    
+    const newRatio = params.timeRatio;
+    let newRemainingSeconds;
+
+    // 【新邏輯】根據新舊比例決定剩餘秒數
+    if (newRatio < oldRemainingSeconds) {
+      // Case A: 新週期比剩餘秒數還短，設為 newRatio - 1（即將換日）
+      newRemainingSeconds = newRatio - 1;
+    } else {
+      // Case B: 新週期足夠容納剩餘秒數，保持不變
+      newRemainingSeconds = oldRemainingSeconds;
+    }
+
+    // 反推 newPassedSeconds
+    const newPassedSeconds = newRatio - newRemainingSeconds;
+    
+    // 重新計算 newElapsed（毫秒）
+    const newElapsed = completedDays * newRatio * 1000 + newPassedSeconds * 1000;
+    
+    // 反推 newGameStartTime
+    newGameStartTime = new Date(now - newElapsed);
+
+    console.log(`[${new Date().toISOString()}] [Param] timeRatio 更新: ${gameStatus.timeRatio}s → ${newRatio}s`);
+    console.log(`[${new Date().toISOString()}] [Param] 當前天數: Day ${completedDays + 1}, 剩餘: ${oldRemainingSeconds}s → ${newRemainingSeconds}s`);
+  }
+
+  await prisma.gameStatus.update({
+    where: { id: 1 },
+    data: {
+      ...params,
+      gameStartTime: newGameStartTime,
+    },
+  });
+
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲參數已更新`);
 }
 
 /**
@@ -255,10 +509,15 @@ export async function getLeaderboard(currentPrice: number): Promise<Array<{
  * 【新增】取得歷史新聞資料（從 Day 1 到當前天）
  * @param currentDay - 當前遊戲天數
  * @returns 歷史新聞陣列（依天數排序，僅包含有新聞的日子）
+ * 【修正】僅返回已廣播的新聞
  */
 export function getPastNews(currentDay: number): NewsItem[] {
-  // 篩選出有新聞的天數（title 不為 null）
-  const newsData = scriptData.filter(d => d.day <= currentDay && d.title !== null);
+  // 篩選出有新聞且已廣播的天數
+  const newsData = scriptData.filter(d => 
+    d.day <= currentDay && 
+    d.title !== null && 
+    d.isNewsBroadcasted === true  // 【新增】僅返回已廣播的新聞
+  );
 
   // 轉換格式並返回
   return newsData.map(d => ({
