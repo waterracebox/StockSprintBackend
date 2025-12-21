@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Trend } from '@prisma/client';
 import { prisma } from '../db.js';
+import { loadScriptData } from '../services/gameService.js';
 import { runScriptGeneration } from '../services/scriptGenerator.js';
 import { runSimulation } from '../services/simulationService.js';
 
@@ -146,7 +147,30 @@ export async function previewScript(req: Request, res: Response): Promise<void> 
 export async function updateScriptDay(req: Request, res: Response): Promise<void> {
   try {
     const day = Number(req.params.day);
-    const { price, title, news } = req.body;
+    const { price, title, news, publishTimeOffset, isNewsBroadcasted } = req.body;
+
+    // 驗證 publishTimeOffset：允許 null / undefined / 數字
+    let parsedOffset: number | null | undefined = undefined;
+    if (publishTimeOffset === '' || publishTimeOffset === null || publishTimeOffset === undefined) {
+      parsedOffset = null;
+    } else {
+      const offsetNumber = Number(publishTimeOffset);
+      if (Number.isNaN(offsetNumber)) {
+        res.status(400).json({ error: 'publishTimeOffset 必須為數字或留空' });
+        return;
+      }
+      parsedOffset = offsetNumber;
+    }
+
+    // 驗證 isNewsBroadcasted：允許 boolean 或字串 true/false
+    let parsedBroadcast: boolean | undefined = undefined;
+    if (typeof isNewsBroadcasted === 'boolean') {
+      parsedBroadcast = isNewsBroadcasted;
+    } else if (isNewsBroadcasted === 'true') {
+      parsedBroadcast = true;
+    } else if (isNewsBroadcasted === 'false') {
+      parsedBroadcast = false;
+    }
 
     const result = await prisma.scriptDay.updateMany({
       where: { day },
@@ -154,8 +178,13 @@ export async function updateScriptDay(req: Request, res: Response): Promise<void
         price: price !== undefined ? Number(price) : undefined,
         title: title ?? null,
         news: news ?? null,
+        publishTimeOffset: parsedOffset,
+        isNewsBroadcasted: parsedBroadcast,
       },
     });
+
+    // 更新記憶體中的劇本快取，確保遊戲迴圈同步最新設定
+    await loadScriptData();
 
     res.json({ message: `第 ${day} 天數據已更新`, affected: result.count });
   } catch (error: any) {

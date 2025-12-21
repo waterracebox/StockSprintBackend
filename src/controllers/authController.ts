@@ -4,6 +4,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../db.js";
+import { getGameState } from "../services/gameService.js";
 
 /**
  * 使用者註冊
@@ -11,7 +12,7 @@ import { prisma } from "../db.js";
  */
 export async function register(req: Request, res: Response): Promise<void> {
   try {
-    const { username, password, displayName } = req.body;
+    const { username, password, displayName, isEmployee } = req.body;
 
     // 去除前後空白
     const trimmedUsername = username?.trim();
@@ -42,17 +43,22 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // 取得當前的初始現金設定（若不存在則使用預設 50）
+    const gameState = await getGameState();
+    const initialCash = Number.isFinite(gameState.initialCash) ? gameState.initialCash : 50;
+
     // 加密密碼（使用 bcrypt，加密強度為 10）
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 建立新使用者（預設 cash=50, stocks=0, role=USER）
+    // 建立新使用者（依據目前遊戲設定的初始現金）
     const newUser = await prisma.user.create({
       data: {
         username: trimmedUsername,
         password: hashedPassword,
         displayName: trimmedDisplayName || trimmedUsername, // 若未提供顯示名稱則使用 username
-        cash: 50,
+        cash: initialCash,
         stocks: 0,
+        isEmployee: Boolean(isEmployee),
         role: "USER",
       },
       select: {
@@ -61,6 +67,7 @@ export async function register(req: Request, res: Response): Promise<void> {
         displayName: true,
         cash: true,
         stocks: true,
+        isEmployee: true,
         role: true,
         createdAt: true,
       },
@@ -164,6 +171,7 @@ export async function getMe(req: Request, res: Response): Promise<void> {
         debt: true,
         role: true,
         firstSignIn: true,
+        isEmployee: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -226,6 +234,7 @@ export async function updateAvatar(req: Request, res: Response): Promise<void> {
         stocks: true,
         debt: true,
         role: true,
+        isEmployee: true,
         updatedAt: true,
       },
     });
@@ -248,13 +257,57 @@ export async function updateAvatar(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * 更新帳號設定（目前僅允許 isEmployee）
+ * PATCH /api/auth/account
+ * 需要驗證 (Protected Route)
+ */
+export async function updateAccount(req: Request, res: Response): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: "未驗證" });
+      return;
+    }
+
+    const { isEmployee } = req.body;
+    if (typeof isEmployee !== 'boolean') {
+      res.status(400).json({ error: "isEmployee 必須為布林值" });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { isEmployee },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        cash: true,
+        stocks: true,
+        debt: true,
+        role: true,
+        firstSignIn: true,
+        isEmployee: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    res.status(200).json({ message: "帳號設定已更新", user: updatedUser });
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Auth] 更新帳號設定失敗:`, error.message);
+    res.status(500).json({ error: "伺服器錯誤" });
+  }
+}
+
+/**
  * 管理員註冊（需要管理員金鑰）
  * POST /api/auth/register-admin
  * 僅供初始化或特殊情況使用
  */
 export async function registerAdmin(req: Request, res: Response): Promise<void> {
   try {
-    const { username, password, displayName, adminSecret } = req.body;
+    const { username, password, displayName, adminSecret, isEmployee } = req.body;
 
     // 驗證管理員金鑰
     const expectedSecret = process.env.ADMIN_SECRET;
@@ -293,6 +346,10 @@ export async function registerAdmin(req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // 取得當前的初始現金設定（若不存在則使用預設 50）
+    const gameState = await getGameState();
+    const initialCash = Number.isFinite(gameState.initialCash) ? gameState.initialCash : 50;
+
     // 加密密碼
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -302,8 +359,9 @@ export async function registerAdmin(req: Request, res: Response): Promise<void> 
         username,
         password: hashedPassword,
         displayName: displayName || username,
-        cash: 50,
+        cash: initialCash,
         stocks: 0,
+        isEmployee: Boolean(isEmployee),
         role: "ADMIN", // 設定為管理員角色
       },
       select: {
@@ -312,6 +370,7 @@ export async function registerAdmin(req: Request, res: Response): Promise<void> 
         displayName: true,
         cash: true,
         stocks: true,
+        isEmployee: true,
         role: true,
         createdAt: true,
       },

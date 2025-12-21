@@ -23,6 +23,7 @@ model User {
   dailyBorrowed   Int              @default(0)      // 【新增】每日借款追蹤 (每日重置)
   role            Role             @default(USER)
   firstSignIn     Boolean          @default(true)
+  isEmployee      Boolean          @default(false)
   contractOrders  ContractOrder[]  // 關聯：合約訂單
 
   createdAt       DateTime         @default(now())

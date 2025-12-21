@@ -259,6 +259,7 @@ export async function getUsersHandler(req: Request, res: Response): Promise<void
           stocks: true,
           debt: true,
           firstSignIn: true,
+          isEmployee: true,
           role: true,
         },
         skip,
@@ -293,7 +294,7 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
   try {
     const { prisma } = await import('../db.js');
     const userId = parseInt(req.params.id);
-    const { displayName, cash, stocks, debt, firstSignIn, password } = req.body;
+    const { displayName, cash, stocks, debt, firstSignIn, password, isEmployee } = req.body;
 
     // 驗證 userId
     if (isNaN(userId)) {
@@ -319,6 +320,7 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
       stocks: parseInt(stocks),
       debt: parseFloat(debt),
       firstSignIn: firstSignIn === true || firstSignIn === 'true',
+      isEmployee: isEmployee === true || isEmployee === 'true',
     };
 
     // 若提供密碼且非空，則雜湊後更新
@@ -340,6 +342,7 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
         stocks: true,
         debt: true,
         firstSignIn: true,
+        isEmployee: true,
       },
     });
 
@@ -352,6 +355,7 @@ export async function updateUserHandler(req: Request, res: Response): Promise<vo
       stocks: updatedUser.stocks,
       debt: updatedUser.debt,
       firstSignIn: updatedUser.firstSignIn,
+      isEmployee: updatedUser.isEmployee,
     });
 
     res.json({ message: '使用者資料已更新', user: updatedUser });
