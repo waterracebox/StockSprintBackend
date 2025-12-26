@@ -20,8 +20,12 @@ import { startGame, stopGame, loadScriptData, getGameState, getCurrentStockData,
 import { registerTradeHandlers } from './src/socket/tradeHandlers.js';
 // 【新增】借貸處理器
 import { registerLoanHandlers } from './src/socket/loanHandlers.js';
+// 【新增】小遊戲處理器
+import { registerMiniGameHandlers } from './src/socket/miniGameHandlers.js';
 // 【新增】監控服務
 import { initializeMonitor } from './src/services/monitorService.js';
+// 【新增】小遊戲狀態管理
+import { initializeMiniGame } from './src/services/miniGameService.js';
 // 【新增】IO 管理器
 import { setGlobalIO } from './src/ioManager.js';
 // 共享資料庫連線
@@ -258,6 +262,9 @@ io.on("connection", async (socket) => {
     // 【新增】註冊地下錢莊處理器
     registerLoanHandlers(io, socket);
 
+    // 【新增】註冊小遊戲處理器
+    registerMiniGameHandlers(io, socket);
+
     // 處理斷線事件
     socket.on("disconnect", (reason) => {
         console.log(`[${new Date().toISOString()}] [WebSocket] 使用者 ${userId} 已斷線 (原因: ${reason})`);
@@ -270,6 +277,9 @@ io.on("connection", async (socket) => {
         console.log(`[${new Date().toISOString()}] [Init] 正在載入劇本資料...`);
         await loadScriptData();
         console.log(`[${new Date().toISOString()}] [Init] 劇本資料載入完成`);
+
+        // 初始化小遊戲狀態（重啟時自動恢復）
+        await initializeMiniGame();
     } catch (error: any) {
         console.error(`[${new Date().toISOString()}] [Init] 劇本資料載入失敗:`, error.message);
         process.exit(1); // 若劇本載入失敗，停止啟動
