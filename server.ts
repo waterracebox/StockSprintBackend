@@ -249,6 +249,10 @@ io.on("connection", async (socket) => {
         // 推送完整狀態給該使用者
         socket.emit('FULL_SYNC_STATE', syncPayload);
 
+        // 推送當前小遊戲狀態（刷新/重連時也能即時看到）
+        const miniGameState = global.currentMiniGame ?? (await initializeMiniGame());
+        socket.emit('MINIGAME_SYNC', miniGameState);
+
         console.log(
             `[${new Date().toISOString()}] [Sync] 使用者 ${userId} 已接收完整狀態同步 (Day ${gameState.currentDay})`
         );
