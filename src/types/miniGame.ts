@@ -7,6 +7,7 @@ export interface MiniGameState {
   startTime: number;
   endTime: number;
   data: {
+    allowGuest?: boolean;
     packets?: {
       id: number;
       name: string;

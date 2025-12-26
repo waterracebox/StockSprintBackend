@@ -26,19 +26,20 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
         }
 
         case "INIT_GAME": {
+          const allowGuest = Boolean(payload?.allowGuest);
           const nextState: MiniGameState = {
             gameType: "RED_ENVELOPE",
             phase: "IDLE",
             startTime: Date.now(),
             endTime: 0,
-            data: {},
+            data: { allowGuest },
           };
 
           global.currentMiniGame = nextState;
           await saveMiniGameState(nextState);
 
           io.emit("MINIGAME_SYNC", nextState);
-          console.log(`${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 INIT_GAME，狀態已設定為 RED_ENVELOPE/IDLE 並廣播`);
+          console.log(`${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 INIT_GAME，狀態已設定為 RED_ENVELOPE/IDLE 並廣播 (allowGuest=${allowGuest})`);
           break;
         }
 

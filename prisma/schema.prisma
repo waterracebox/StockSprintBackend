@@ -89,6 +89,17 @@ model ContractOrder {
   createdAt    DateTime     @default(now())
 }
 
+// 紅包遊戲獎項設定
+model RedEnvelopeItem {
+  id           Int     @id @default(autoincrement())
+  name         String
+  type         String   @default("PHYSICAL") // "PHYSICAL" | "CASH"
+  prizeValue   Int      @default(0)           // 若 type="CASH"，代表發放的金額
+  amount       Int
+  displayOrder Int     @default(0) // 價值排序（數字越小越優先）
+  isActive     Boolean @default(true)
+}
+
 // 小遊戲運行時狀態（僅存一筆，用於重啟恢復）
 model MiniGameRuntime {
   key       String   @id // 固定為 "CURRENT_GAME"

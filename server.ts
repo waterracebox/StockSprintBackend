@@ -10,6 +10,8 @@ import { Server as SocketIOServer } from "socket.io";
 import authRoutes from "./src/routes/authRoutes.js";
 // 【新增】Admin 路由
 import adminRoutes from "./src/routes/adminRoutes.js";
+// 【新增】紅包 CRUD 路由
+import redEnvelopeRoutes from "./src/routes/redEnvelopeRoutes.js";
 // Socket 認證中介軟體
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 遊戲迴圈
@@ -42,6 +44,9 @@ app.use(express.json());
 
 // 掛載驗證路由
 app.use("/api/auth", authRoutes);
+
+// 紅包遊戲獎項 CRUD
+app.use("/api/admin/games/red-envelope", redEnvelopeRoutes);
 
 // 【新增】掛載 Admin 路由
 app.use("/api/admin", adminRoutes);
