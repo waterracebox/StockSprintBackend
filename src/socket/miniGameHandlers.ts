@@ -1,5 +1,5 @@
 import type { Server, Socket } from "socket.io";
-import { defaultMiniGameState, saveMiniGameState } from "../services/miniGameService.js";
+import { defaultMiniGameState, initRedEnvelopeGame, saveMiniGameState, withLatestParticipants } from "../services/miniGameService.js";
 import type { MiniGameState } from "../types/miniGame.js";
 
 const LOG_PREFIX = "[MiniGame]";
@@ -27,19 +27,38 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
 
         case "INIT_GAME": {
           const allowGuest = Boolean(payload?.allowGuest);
+          const consolation = {
+            name: String(payload?.consolation?.name || "參加獎"),
+            type: (payload?.consolation?.type === "CASH" ? "CASH" : "PHYSICAL") as "PHYSICAL" | "CASH",
+            value: Number.isFinite(Number(payload?.consolation?.value)) ? Number(payload?.consolation?.value) : 0,
+          };
+
+          const nextState = await initRedEnvelopeGame({ allowGuest, consolation });
+          io.emit("MINIGAME_SYNC", nextState);
+          console.log(
+            `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 INIT_GAME，已載入獎項與安慰獎並廣播 (allowGuest=${allowGuest}, consolation=${consolation.name}/${consolation.type}/${consolation.value})`
+          );
+          break;
+        }
+
+        case "START_SHUFFLE": {
+          const current = global.currentMiniGame ?? { ...defaultMiniGameState };
+          if (current.gameType !== "RED_ENVELOPE") {
+            console.warn(`${new Date().toISOString()} ${LOG_PREFIX} START_SHUFFLE 被忽略，當前 gameType=${current.gameType}`);
+            break;
+          }
+
+          const updatedWithParticipants = await withLatestParticipants(current);
           const nextState: MiniGameState = {
-            gameType: "RED_ENVELOPE",
-            phase: "IDLE",
+            ...updatedWithParticipants,
+            phase: "SHUFFLE",
             startTime: Date.now(),
-            endTime: 0,
-            data: { allowGuest },
           };
 
           global.currentMiniGame = nextState;
           await saveMiniGameState(nextState);
-
           io.emit("MINIGAME_SYNC", nextState);
-          console.log(`${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 INIT_GAME，狀態已設定為 RED_ENVELOPE/IDLE 並廣播 (allowGuest=${allowGuest})`);
+          console.log(`${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 START_SHUFFLE，狀態 SHUFFLE 已廣播並更新參與者`);
           break;
         }
 

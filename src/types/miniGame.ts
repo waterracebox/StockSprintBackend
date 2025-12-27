@@ -8,11 +8,15 @@ export interface MiniGameState {
   endTime: number;
   data: {
     allowGuest?: boolean;
+    consolationConfig?: { name: string; type: "PHYSICAL" | "CASH"; value: number };
+    participants?: { userId: number; displayName: string; avatar: string | null }[];
     packets?: {
-      id: number;
+      index: number;
       name: string;
       isTaken: boolean;
       ownerId: string | null;
+      type?: string;
+      prizeValue?: number;
     }[];
     currentQuizId?: number;
     quizAnswers?: { userId: string; answerIndex: string; timestamp: number }[];
@@ -27,8 +31,12 @@ export interface RedEnvelopePayload {
     name: string;
     isTaken: boolean;
     ownerId: string | null;
+    type?: string;
+    prizeValue?: number;
   }[];
   allowGuest: boolean;
+  participants?: { userId: number; displayName: string; avatar: string | null }[];
+  consolationConfig?: { name: string; type: "PHYSICAL" | "CASH"; value: number };
 }
 
 export interface QuizPayload {

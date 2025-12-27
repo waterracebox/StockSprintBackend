@@ -12,6 +12,7 @@ import authRoutes from "./src/routes/authRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 // 【新增】紅包 CRUD 路由
 import redEnvelopeRoutes from "./src/routes/redEnvelopeRoutes.js";
+import miniGameRoutes from "./src/routes/miniGameRoutes.js";
 // Socket 認證中介軟體
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 遊戲迴圈
@@ -28,6 +29,8 @@ import { registerMiniGameHandlers } from './src/socket/miniGameHandlers.js';
 import { initializeMonitor } from './src/services/monitorService.js';
 // 【新增】小遊戲狀態管理
 import { initializeMiniGame } from './src/services/miniGameService.js';
+// 【新增】小遊戲參與者廣播
+import { startMiniGameParticipantBroadcast } from './src/services/miniGameBroadcast.js';
 // 【新增】IO 管理器
 import { setGlobalIO } from './src/ioManager.js';
 // 共享資料庫連線
@@ -47,6 +50,9 @@ app.use("/api/auth", authRoutes);
 
 // 紅包遊戲獎項 CRUD
 app.use("/api/admin/games/red-envelope", redEnvelopeRoutes);
+
+// 小遊戲通用 API
+app.use("/api/minigame", miniGameRoutes);
 
 // 【新增】掛載 Admin 路由
 app.use("/api/admin", adminRoutes);
@@ -289,6 +295,9 @@ io.on("connection", async (socket) => {
 
         // 初始化小遊戲狀態（重啟時自動恢復）
         await initializeMiniGame();
+
+        // 啟動小遊戲參與者廣播（每 5 秒），避免前端輪詢
+        startMiniGameParticipantBroadcast(5000);
     } catch (error: any) {
         console.error(`[${new Date().toISOString()}] [Init] 劇本資料載入失敗:`, error.message);
         process.exit(1); // 若劇本載入失敗，停止啟動
