@@ -3,7 +3,7 @@ export type MiniGamePayload = RedEnvelopePayload | QuizPayload | MinorityPayload
 
 export interface MiniGameState {
   gameType: "NONE" | "RED_ENVELOPE" | "QUIZ" | "MINORITY";
-  phase: "IDLE" | "SHUFFLE" | "PREPARE" | "GAMING" | "REVEAL" | "RESULT";
+  phase: "IDLE" | "SHUFFLE" | "COUNTDOWN" | "PREPARE" | "GAMING" | "REVEAL" | "RESULT";
   startTime: number;
   endTime: number;
   data: {

@@ -11,6 +11,11 @@ const defaultMiniGameState: MiniGameState = {
 
 const LOG_PREFIX = "[MiniGame]";
 
+// 紅包洗牌→開搶的固定節奏時間（毫秒）
+export const ANIMATION_DURATION = 3000;
+export const COUNTDOWN_DURATION = 3000;
+export const TOTAL_PREP_TIME = ANIMATION_DURATION + COUNTDOWN_DURATION;
+
 export interface RedEnvelopeInitOptions {
   allowGuest: boolean;
   consolation: { name: string; type: "PHYSICAL" | "CASH"; value: number };
