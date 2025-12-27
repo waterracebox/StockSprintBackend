@@ -7,7 +7,7 @@ let participantsTimer: NodeJS.Timeout | null = null;
 // 僅在紅包遊戲進行時才廣播
 function shouldBroadcast(state?: MiniGameState | null): boolean {
   if (!state) return false;
-  return state.gameType === "RED_ENVELOPE" && state.phase !== "IDLE";
+  return state.gameType === "RED_ENVELOPE" && state.phase === "IDLE";
 }
 
 /**
