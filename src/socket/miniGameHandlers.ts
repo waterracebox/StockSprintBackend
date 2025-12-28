@@ -121,6 +121,30 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
           break;
         }
 
+        case "REVEAL_RESULT": {
+          const current = global.currentMiniGame ?? { ...defaultMiniGameState };
+          if (current.gameType !== "RED_ENVELOPE" || current.phase !== "GAMING") {
+            console.warn(
+              `${new Date().toISOString()} ${LOG_PREFIX} REVEAL_RESULT 被忽略，phase=${current.phase}, gameType=${current.gameType}`
+            );
+            break;
+          }
+
+          const nextState: MiniGameState = {
+            ...current,
+            phase: "REVEAL",
+            startTime: Date.now(),
+          };
+
+          global.currentMiniGame = nextState;
+          await saveMiniGameState(nextState);
+          io.emit("MINIGAME_SYNC", nextState);
+          console.log(
+            `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 REVEAL_RESULT，phase=REVEAL 已廣播`
+          );
+          break;
+        }
+
         default: {
           console.warn(`${new Date().toISOString()} ${LOG_PREFIX} 收到未支援的 ADMIN_MINIGAME_ACTION: ${String(action)}`);
           break;
