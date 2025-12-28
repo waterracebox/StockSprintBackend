@@ -70,6 +70,7 @@ function balancePacketsWithConsolation(
       ownerId: null,
       type: consolation.type,
       prizeValue: consolation.type === "CASH" ? consolation.value : undefined,
+      displayOrder: 0, // 【修正】安慰獎的 displayOrder 設為 0
     });
   }
 
@@ -191,6 +192,7 @@ export async function initRedEnvelopeGame(options: RedEnvelopeInitOptions): Prom
         ownerId: null,
         type: item.type,
         prizeValue: item.type === "CASH" ? item.prizeValue : undefined,
+        displayOrder: item.displayOrder, // 【修正】加入 displayOrder
       });
     }
   });

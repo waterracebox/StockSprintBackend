@@ -17,6 +17,8 @@ export interface MiniGameState {
       ownerId: string | null;
       type?: string;
       prizeValue?: number;
+      isScratched?: boolean;
+      displayOrder?: number;
     }[];
     currentQuizId?: number;
     quizAnswers?: { userId: string; answerIndex: string; timestamp: number }[];
@@ -33,6 +35,8 @@ export interface RedEnvelopePayload {
     ownerId: string | null;
     type?: string;
     prizeValue?: number;
+    isScratched?: boolean;
+    displayOrder?: number;
   }[];
   allowGuest: boolean;
   participants?: { userId: number; displayName: string; avatar: string | null }[];

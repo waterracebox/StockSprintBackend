@@ -157,6 +157,57 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
 
   socket.on("MINIGAME_ACTION", async (payload: any, callback?: Function) => {
     const action = payload?.type as string | undefined;
+    
+    // 【新增】處理刮刮樂完成
+    if (action === "SCRATCH_COMPLETE") {
+      try {
+        const userId = socket.data?.userId;
+        if (!userId) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} SCRATCH_COMPLETE 收到但 userId 缺失`);
+          return;
+        }
+
+        const state = global.currentMiniGame;
+        if (!state || state.gameType !== "RED_ENVELOPE" || state.phase !== "REVEAL") {
+          console.warn(
+            `${new Date().toISOString()} ${LOG_PREFIX} SCRATCH_COMPLETE 被忽略，當前狀態不符 (gameType=${state?.gameType}, phase=${state?.phase})`
+          );
+          return;
+        }
+
+        const packets = state.data?.packets || [];
+        const userPacketIndex = packets.findIndex((p) => String(p.ownerId) === String(userId));
+
+        if (userPacketIndex === -1) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 沒有紅包，無法標記 isScratched`);
+          return;
+        }
+
+        packets[userPacketIndex].isScratched = true;
+
+        const takenCount = packets.filter((p) => p.isTaken).length;
+        const scratchedCount = packets.filter((p) => p.isScratched).length;
+
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 完成刮刮樂。進度: ${scratchedCount}/${takenCount}`
+        );
+
+        saveMiniGameState(state).catch((err) =>
+          console.error(`${new Date().toISOString()} ${LOG_PREFIX} 備份狀態失敗:`, err)
+        );
+
+        if (scratchedCount === takenCount) {
+          console.log(
+            `${new Date().toISOString()} ${LOG_PREFIX} 所有玩家刮刮樂完成，廣播 ALL_SCRATCHED 事件`
+          );
+          io.emit("MINIGAME_EVENT", { type: "ALL_SCRATCHED" });
+        }
+      } catch (error: any) {
+        console.error(`${new Date().toISOString()} ${LOG_PREFIX} SCRATCH_COMPLETE 處理失敗:`, error?.message || error);
+      }
+      return;
+    }
+    
     if (action !== "GRAB_PACKET") return;
 
     try {
