@@ -130,6 +130,74 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
             break;
           }
 
+          // 【新增】現金獎項發放邏輯
+          const packets = current.data?.packets || [];
+          const cashWinners = packets.filter((p) => p.isTaken && p.type === "CASH" && p.prizeValue && p.prizeValue > 0);
+
+          if (cashWinners.length > 0) {
+            console.log(`${new Date().toISOString()} ${LOG_PREFIX} 開始發放現金獎項，共 ${cashWinners.length} 位得主`);
+
+            try {
+              // 批次發放現金
+              await prisma.$transaction(async (tx) => {
+                let totalDistributed = 0;
+
+                for (const packet of cashWinners) {
+                  if (!packet.ownerId || !packet.prizeValue) continue;
+
+                  const userId = Number(packet.ownerId);
+                  const amount = packet.prizeValue;
+
+                  await tx.user.update({
+                    where: { id: userId },
+                    data: { cash: { increment: amount } },
+                  });
+
+                  totalDistributed += amount;
+                  console.log(
+                    `${new Date().toISOString()} ${LOG_PREFIX} 發放現金：User ${userId} +$${amount} (${packet.name})`
+                  );
+                }
+
+                console.log(
+                  `${new Date().toISOString()} ${LOG_PREFIX} 現金發放完成：總計 $${totalDistributed}，${cashWinners.length} 位得主`
+                );
+              });
+
+              // 【新增】廣播資產更新給所有得主
+              for (const packet of cashWinners) {
+                if (!packet.ownerId) continue;
+
+                const userId = Number(packet.ownerId);
+                const updatedUser = await prisma.user.findUnique({
+                  where: { id: userId },
+                  select: { cash: true, stocks: true, debt: true, dailyBorrowed: true },
+                });
+
+                if (updatedUser) {
+                  // 找到該用戶的 socket 並發送資產更新
+                  const userSockets = await io.in(`user:${userId}`).fetchSockets();
+                  for (const userSocket of userSockets) {
+                    userSocket.emit('ASSETS_UPDATE', {
+                      cash: updatedUser.cash,
+                      stocks: updatedUser.stocks,
+                      debt: updatedUser.debt,
+                      dailyBorrowed: updatedUser.dailyBorrowed,
+                    });
+                  }
+                  console.log(
+                    `${new Date().toISOString()} ${LOG_PREFIX} 已通知 User ${userId} 資產更新 (cash=${updatedUser.cash})`
+                  );
+                }
+              }
+            } catch (error: any) {
+              console.error(
+                `${new Date().toISOString()} ${LOG_PREFIX} 現金發放失敗:`,
+                error?.message || error
+              );
+            }
+          }
+
           const nextState: MiniGameState = {
             ...current,
             phase: "REVEAL",
@@ -141,6 +209,27 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
           io.emit("MINIGAME_SYNC", nextState);
           console.log(
             `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 REVEAL_RESULT，phase=REVEAL 已廣播`
+          );
+          break;
+        }
+
+        case "FORCE_REVEAL": {
+          const current = global.currentMiniGame ?? { ...defaultMiniGameState };
+          if (current.gameType !== "RED_ENVELOPE" || current.phase !== "REVEAL") {
+            console.warn(
+              `${new Date().toISOString()} ${LOG_PREFIX} FORCE_REVEAL 被忽略，phase=${current.phase}, gameType=${current.gameType}`
+            );
+            break;
+          }
+
+          console.log(
+            `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 FORCE_REVEAL，強制開始揭曉動畫`
+          );
+
+          // 直接廣播 ALL_SCRATCHED 事件，繞過刮刮樂完成檢查
+          io.emit("MINIGAME_EVENT", { type: "ALL_SCRATCHED" });
+          console.log(
+            `${new Date().toISOString()} ${LOG_PREFIX} 已廣播 ALL_SCRATCHED 事件，Display 將開始揭曉動畫`
           );
           break;
         }
@@ -246,7 +335,8 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
 
       global.currentMiniGame = nextState;
 
-      const prizeValue = target.type === "CASH" ? Number(target.prizeValue ?? 0) : 0;
+      // 【移除】不在搶紅包時發放現金，改為揭曉時才發放
+      // const prizeValue = target.type === "CASH" ? Number(target.prizeValue ?? 0) : 0;
 
       await prisma.$transaction(async (tx) => {
         await tx.miniGameRuntime.update({
@@ -260,25 +350,26 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
           },
         });
 
-        if (prizeValue > 0) {
-          await tx.user.update({
-            where: { id: userId },
-            data: { cash: { increment: prizeValue } },
-          });
-        }
+        // 【移除】不在此時發放現金
+        // if (prizeValue > 0) {
+        //   await tx.user.update({
+        //     where: { id: userId },
+        //     data: { cash: { increment: prizeValue } },
+        //   });
+        // }
       });
 
       io.emit("MINIGAME_EVENT", { type: "PACKET_TAKEN", index: packetIndex, ownerId: String(userId) });
       // 追加同步，確保所有端狀態一致（避免漏掉事件）
       io.emit("MINIGAME_SYNC", nextState);
       console.log(
-        `${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 搶得紅包 #${packetIndex} (${target.name}) prize=${target.type}/${prizeValue}`
+        `${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 搶得紅包 #${packetIndex} (${target.name}) type=${target.type}`
       );
 
       const successResp = {
         status: "SUCCESS",
         index: packetIndex,
-        prize: { name: target.name, type: target.type, prizeValue, ownerId: String(userId) },
+        prize: { name: target.name, type: target.type, prizeValue: target.prizeValue || 0, ownerId: String(userId) },
       };
 
       if (typeof callback === "function") {

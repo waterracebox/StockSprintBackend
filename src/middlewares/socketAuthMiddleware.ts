@@ -38,7 +38,10 @@ export function socketAuthMiddleware(io: Server) {
       socket.data.userId = decoded.userId;
       socket.data.role = decoded.role;
 
-      console.log(`[Socket Auth] 使用者 ${decoded.userId} (${decoded.role}) 通過驗證`);
+      // 【新增】讓用戶加入專屬 room，方便後續定向廣播資產更新
+      socket.join(`user:${decoded.userId}`);
+
+      console.log(`[Socket Auth] 使用者 ${decoded.userId} (${decoded.role}) 通過驗證並加入 room:user:${decoded.userId}`);
       next();
     } catch (error: any) {
       console.error("[Socket Auth] Token 驗證失敗:", error.message);
