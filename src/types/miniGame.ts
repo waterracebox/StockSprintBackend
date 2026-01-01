@@ -52,6 +52,7 @@ export interface QuizPayload {
     options: string[];
     correctAnswer: string;
     rewards: any;
+    duration?: number;
   };
   answers?: Record<string, { answer: string; timestamp: number }>;
 }

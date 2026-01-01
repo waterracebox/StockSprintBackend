@@ -42,34 +42,89 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
           const gameType = payload?.gameType as "QUIZ" | "RED_ENVELOPE" | undefined;
 
           if (gameType === "QUIZ") {
-            // Quiz 初始化邏輯
-            const firstQuestion = await prisma.quizQuestion.findFirst({
-              orderBy: { id: "asc" },
-            });
+            // 【修改】檢查是否提供 questionId (發布模式)
+            const questionId = payload?.questionId as number | undefined;
 
-            if (!firstQuestion) {
-              console.warn(`${new Date().toISOString()} ${LOG_PREFIX} Quiz 初始化失敗：題庫為空`);
-              socket.emit("ERROR", { message: "題庫為空，請先新增題目" });
-              break;
+            if (questionId) {
+              // 【發布模式】：從指定題目開始
+              const selectedQuestion = await prisma.quizQuestion.findUnique({
+                where: { id: questionId },
+              });
+
+              if (!selectedQuestion) {
+                console.warn(
+                  `${new Date().toISOString()} ${LOG_PREFIX} Quiz 發布失敗：題目 #${questionId} 不存在`
+                );
+                socket.emit("ERROR", { message: `題目 #${questionId} 不存在` });
+                break;
+              }
+
+              // 【關鍵】自動推進邏輯：查詢下一題
+              const nextQuestion = await prisma.quizQuestion.findFirst({
+                where: { id: { gt: questionId } }, // id 大於當前題目
+                orderBy: { id: "asc" },
+              });
+
+              const nextState: MiniGameState = {
+                gameType: "QUIZ",
+                phase: "PREPARE", // 【階段】進入預覽模式
+                startTime: Date.now(),
+                endTime: 0,
+                data: {
+                  currentQuizId: questionId, // 當前發布的題目 ID
+                  question: {
+                    title: selectedQuestion.question,
+                    options: [
+                      selectedQuestion.optionA,
+                      selectedQuestion.optionB,
+                      selectedQuestion.optionC,
+                      selectedQuestion.optionD,
+                    ],
+                    correctAnswer: selectedQuestion.correctAnswer,
+                    rewards: selectedQuestion.rewards,
+                    duration: selectedQuestion.duration,
+                  },
+                  nextCandidateId: nextQuestion ? nextQuestion.id : null, // 【自動推進】下一題 ID
+                },
+              };
+
+              global.currentMiniGame = nextState;
+              await saveMiniGameState(nextState);
+
+              io.emit("MINIGAME_SYNC", nextState);
+              console.log(
+                `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 發布題目 #${questionId}，下一題預選 #${nextQuestion?.id || "null"}`
+              );
+            } else {
+              // 【初始化模式】：選擇第一題作為 nextCandidateId
+              const firstQuestion = await prisma.quizQuestion.findFirst({
+                orderBy: { id: "asc" },
+              });
+
+              if (!firstQuestion) {
+                console.warn(`${new Date().toISOString()} ${LOG_PREFIX} Quiz 初始化失敗：題庫為空`);
+                socket.emit("ERROR", { message: "題庫為空，請先新增題目" });
+                break;
+              }
+
+              const nextState: MiniGameState = {
+                gameType: "QUIZ",
+                phase: "IDLE",
+                startTime: Date.now(),
+                endTime: 0,
+                data: {
+                  nextCandidateId: firstQuestion.id, // 預選第一題
+                },
+              };
+
+              global.currentMiniGame = nextState;
+              await saveMiniGameState(nextState);
+
+              io.emit("MINIGAME_SYNC", nextState);
+              console.log(
+                `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 初始化 Quiz，預選題目 #${firstQuestion.id}`
+              );
             }
-
-            const nextState: MiniGameState = {
-              gameType: "QUIZ",
-              phase: "IDLE",
-              startTime: Date.now(),
-              endTime: 0,
-              data: {
-                nextCandidateId: firstQuestion.id, // 預選第一題
-              },
-            };
-
-            global.currentMiniGame = nextState;
-            await saveMiniGameState(nextState);
-
-            io.emit("MINIGAME_SYNC", nextState);
-            console.log(
-              `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 初始化 Quiz，預選題目 #${firstQuestion.id}`
-            );
           } else {
             // Red Envelope 初始化邏輯（保留原有邏輯）
             const allowGuest = Boolean(payload?.allowGuest);
