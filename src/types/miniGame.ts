@@ -20,6 +20,7 @@ export interface MiniGameState {
       isScratched?: boolean;
       displayOrder?: number;
     }[];
+    nextCandidateId?: number; // Quiz: Admin Dropdown 預選的題目 ID
     currentQuizId?: number;
     quizAnswers?: { userId: string; answerIndex: string; timestamp: number }[];
     currentMinorityId?: number;
@@ -44,14 +45,15 @@ export interface RedEnvelopePayload {
 }
 
 export interface QuizPayload {
-  currentQuestionId: number;
-  question: {
+  currentQuestionId?: number; // 已發布的題目 ID（phase=PREPARE/GAMING 時才有值）
+  nextCandidateId?: number;   // Admin Dropdown 預選的題目 ID（phase=IDLE 時有效）
+  question?: {
     title: string;
     options: string[];
     correctAnswer: string;
     rewards: any;
   };
-  answers: Record<string, { answer: string; timestamp: number }>;
+  answers?: Record<string, { answer: string; timestamp: number }>;
 }
 
 export interface MinorityPayload {

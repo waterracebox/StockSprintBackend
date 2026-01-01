@@ -38,18 +38,53 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
         }
 
         case "INIT_GAME": {
-          const allowGuest = Boolean(payload?.allowGuest);
-          const consolation = {
-            name: String(payload?.consolation?.name || "參加獎"),
-            type: (payload?.consolation?.type === "CASH" ? "CASH" : "PHYSICAL") as "PHYSICAL" | "CASH",
-            value: Number.isFinite(Number(payload?.consolation?.value)) ? Number(payload?.consolation?.value) : 0,
-          };
+          // 判斷是 Quiz 還是 Red Envelope
+          const gameType = payload?.gameType as "QUIZ" | "RED_ENVELOPE" | undefined;
 
-          const nextState = await initRedEnvelopeGame({ allowGuest, consolation });
-          io.emit("MINIGAME_SYNC", nextState);
-          console.log(
-            `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 INIT_GAME，已載入獎項與安慰獎並廣播 (allowGuest=${allowGuest}, consolation=${consolation.name}/${consolation.type}/${consolation.value})`
-          );
+          if (gameType === "QUIZ") {
+            // Quiz 初始化邏輯
+            const firstQuestion = await prisma.quizQuestion.findFirst({
+              orderBy: { id: "asc" },
+            });
+
+            if (!firstQuestion) {
+              console.warn(`${new Date().toISOString()} ${LOG_PREFIX} Quiz 初始化失敗：題庫為空`);
+              socket.emit("ERROR", { message: "題庫為空，請先新增題目" });
+              break;
+            }
+
+            const nextState: MiniGameState = {
+              gameType: "QUIZ",
+              phase: "IDLE",
+              startTime: Date.now(),
+              endTime: 0,
+              data: {
+                nextCandidateId: firstQuestion.id, // 預選第一題
+              },
+            };
+
+            global.currentMiniGame = nextState;
+            await saveMiniGameState(nextState);
+
+            io.emit("MINIGAME_SYNC", nextState);
+            console.log(
+              `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 初始化 Quiz，預選題目 #${firstQuestion.id}`
+            );
+          } else {
+            // Red Envelope 初始化邏輯（保留原有邏輯）
+            const allowGuest = Boolean(payload?.allowGuest);
+            const consolation = {
+              name: String(payload?.consolation?.name || "參加獎"),
+              type: (payload?.consolation?.type === "CASH" ? "CASH" : "PHYSICAL") as "PHYSICAL" | "CASH",
+              value: Number.isFinite(Number(payload?.consolation?.value)) ? Number(payload?.consolation?.value) : 0,
+            };
+
+            const nextState = await initRedEnvelopeGame({ allowGuest, consolation });
+            io.emit("MINIGAME_SYNC", nextState);
+            console.log(
+              `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 觸發 INIT_GAME，已載入獎項與安慰獎並廣播 (allowGuest=${allowGuest}, consolation=${consolation.name}/${consolation.type}/${consolation.value})`
+            );
+          }
           break;
         }
 

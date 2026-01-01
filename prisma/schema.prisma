@@ -100,6 +100,20 @@ model RedEnvelopeItem {
   isActive     Boolean @default(true)
 }
 
+// 機智問答題庫
+model QuizQuestion {
+  id            Int      @id @default(autoincrement())
+  question      String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctAnswer String   // "A", "B", "C", "D"
+  rewards       Json     // { first: 20, second: 15, third: 10, others: 5 }
+  duration      Int      @default(10)
+  createdAt     DateTime @default(now())
+}
+
 // 小遊戲運行時狀態（僅存一筆，用於重啟恢復）
 model MiniGameRuntime {
   key       String   @id // 固定為 "CURRENT_GAME"

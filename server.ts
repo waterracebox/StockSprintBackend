@@ -13,6 +13,8 @@ import adminRoutes from "./src/routes/adminRoutes.js";
 // 【新增】紅包 CRUD 路由
 import redEnvelopeRoutes from "./src/routes/redEnvelopeRoutes.js";
 import miniGameRoutes from "./src/routes/miniGameRoutes.js";
+// 【新增】問答 CRUD 路由
+import quizRoutes from "./src/routes/quizRoutes.js";
 // Socket 認證中介軟體
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 遊戲迴圈
@@ -50,6 +52,9 @@ app.use("/api/auth", authRoutes);
 
 // 紅包遊戲獎項 CRUD
 app.use("/api/admin/games/red-envelope", redEnvelopeRoutes);
+
+// Quiz 題庫 CRUD
+app.use("/api/admin/games/quiz", quizRoutes);
 
 // 小遊戲通用 API
 app.use("/api/minigame", miniGameRoutes);
