@@ -12,6 +12,22 @@ import type { MiniGameState } from "../types/miniGame.js";
 const LOG_PREFIX = "[MiniGame]";
 let grabTimer: NodeJS.Timeout | null = null;
 
+// 【新增】用於存儲 Quiz 自動推進的 Timer
+let quizPrepareTimer: NodeJS.Timeout | null = null;
+let quizCountdownTimer: NodeJS.Timeout | null = null;
+
+// 【新增】清理所有 Quiz Timer 的函數
+function clearQuizTimers() {
+  if (quizPrepareTimer) {
+    clearTimeout(quizPrepareTimer);
+    quizPrepareTimer = null;
+  }
+  if (quizCountdownTimer) {
+    clearTimeout(quizCountdownTimer);
+    quizCountdownTimer = null;
+  }
+}
+
 export function registerMiniGameHandlers(io: Server, socket: Socket): void {
   socket.on("ADMIN_MINIGAME_ACTION", async (payload: any) => {
     if (socket.data?.role !== "ADMIN") {
@@ -28,6 +44,9 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
             clearTimeout(grabTimer);
             grabTimer = null;
           }
+          // 【新增】清理 Quiz Timer
+          clearQuizTimers();
+          
           const nextState: MiniGameState = { ...defaultMiniGameState };
           global.currentMiniGame = nextState;
           await saveMiniGameState(nextState);
@@ -46,7 +65,7 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
             const questionId = payload?.questionId as number | undefined;
 
             if (questionId) {
-              // 【發布模式】：從指定題目開始
+              // 【發布模式】：啟動三階段自動流程
               const selectedQuestion = await prisma.quizQuestion.findUnique({
                 where: { id: questionId },
               });
@@ -59,19 +78,24 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                 break;
               }
 
-              // 【關鍵】自動推進邏輯：查詢下一題
+              // 【新增】清理舊的 Timer（防止重複觸發）
+              clearQuizTimers();
+
+              // 查詢下一題
               const nextQuestion = await prisma.quizQuestion.findFirst({
-                where: { id: { gt: questionId } }, // id 大於當前題目
+                where: { id: { gt: questionId } },
                 orderBy: { id: "asc" },
               });
 
-              const nextState: MiniGameState = {
+              // ========== Step A: PREPARE (讀題階段) ==========
+              const prepareEndTime = Date.now() + 5000; // 5 秒讀題
+              const prepareState: MiniGameState = {
                 gameType: "QUIZ",
-                phase: "PREPARE", // 【階段】進入預覽模式
+                phase: "PREPARE",
                 startTime: Date.now(),
-                endTime: 0,
+                endTime: prepareEndTime,
                 data: {
-                  currentQuizId: questionId, // 當前發布的題目 ID
+                  currentQuizId: questionId,
                   question: {
                     title: selectedQuestion.question,
                     options: [
@@ -84,16 +108,75 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                     rewards: selectedQuestion.rewards,
                     duration: selectedQuestion.duration,
                   },
-                  nextCandidateId: nextQuestion ? nextQuestion.id : undefined, // 【自動推進】下一題 ID
+                  nextCandidateId: nextQuestion ? nextQuestion.id : undefined,
                 },
               };
 
-              global.currentMiniGame = nextState;
-              await saveMiniGameState(nextState);
+              global.currentMiniGame = prepareState;
+              await saveMiniGameState(prepareState);
+              io.emit("MINIGAME_SYNC", prepareState);
 
-              io.emit("MINIGAME_SYNC", nextState);
               console.log(
-                `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 發布題目 #${questionId}，下一題預選 #${nextQuestion?.id || "null"}`
+                `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step A: PREPARE 開始 (5s 讀題)`
+              );
+
+              // ========== 設定 Timer：5 秒後進入 Step B ==========
+              quizPrepareTimer = setTimeout(async () => {
+                try {
+                  // Step B: COUNTDOWN (倒數階段)
+                  const countdownEndTime = Date.now() + 3000; // 3 秒倒數
+                  const countdownState: MiniGameState = {
+                    ...prepareState,
+                    phase: "COUNTDOWN",
+                    startTime: Date.now(),
+                    endTime: countdownEndTime,
+                  };
+
+                  global.currentMiniGame = countdownState;
+                  await saveMiniGameState(countdownState);
+                  io.emit("MINIGAME_SYNC", countdownState);
+
+                  console.log(
+                    `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step B: COUNTDOWN 開始 (3s 倒數)`
+                  );
+
+                  // ========== 設定 Timer：3 秒後進入 Step C ==========
+                  quizCountdownTimer = setTimeout(async () => {
+                    try {
+                      // Step C: GAMING (作答階段)
+                      const duration = selectedQuestion.duration || 10;
+                      const gamingEndTime = Date.now() + duration * 1000;
+                      const gamingState: MiniGameState = {
+                        ...countdownState,
+                        phase: "GAMING",
+                        startTime: Date.now(),
+                        endTime: gamingEndTime,
+                      };
+
+                      global.currentMiniGame = gamingState;
+                      await saveMiniGameState(gamingState);
+                      io.emit("MINIGAME_SYNC", gamingState);
+
+                      console.log(
+                        `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C: GAMING 開始 (${duration}s 作答)`
+                      );
+                    } catch (error) {
+                      console.error(
+                        `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C 失敗:`,
+                        error
+                      );
+                    }
+                  }, 3000);
+                } catch (error) {
+                  console.error(
+                    `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step B 失敗:`,
+                    error
+                  );
+                }
+              }, 5000);
+
+              console.log(
+                `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 發布題目 #${questionId}，啟動自動流程`
               );
             } else {
               // 【初始化模式】：選擇第一題作為 nextCandidateId
