@@ -84,7 +84,7 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                     rewards: selectedQuestion.rewards,
                     duration: selectedQuestion.duration,
                   },
-                  nextCandidateId: nextQuestion ? nextQuestion.id : null, // 【自動推進】下一題 ID
+                  nextCandidateId: nextQuestion ? nextQuestion.id : undefined, // 【自動推進】下一題 ID
                 },
               };
 

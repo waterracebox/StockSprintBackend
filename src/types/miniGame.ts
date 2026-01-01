@@ -22,6 +22,13 @@ export interface MiniGameState {
     }[];
     nextCandidateId?: number; // Quiz: Admin Dropdown 預選的題目 ID
     currentQuizId?: number;
+    question?: {
+      title: string;
+      options: string[];
+      correctAnswer: string;
+      rewards: any;
+      duration?: number;
+    };
     quizAnswers?: { userId: string; answerIndex: string; timestamp: number }[];
     currentMinorityId?: number;
     minorityBets?: { userId: string; optionIndex: string; amount: number }[];
