@@ -15,6 +15,7 @@ let grabTimer: NodeJS.Timeout | null = null;
 // 【新增】用於存儲 Quiz 自動推進的 Timer
 let quizPrepareTimer: NodeJS.Timeout | null = null;
 let quizCountdownTimer: NodeJS.Timeout | null = null;
+let quizSettleTimer: NodeJS.Timeout | null = null;
 
 // 【新增】清理所有 Quiz Timer 的函數
 function clearQuizTimers() {
@@ -25,6 +26,10 @@ function clearQuizTimers() {
   if (quizCountdownTimer) {
     clearTimeout(quizCountdownTimer);
     quizCountdownTimer = null;
+  }
+  if (quizSettleTimer) {
+    clearTimeout(quizSettleTimer);
+    quizSettleTimer = null;
   }
 }
 
@@ -151,6 +156,10 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                         phase: "GAMING",
                         startTime: Date.now(),
                         endTime: gamingEndTime,
+                        data: {
+                          ...countdownState.data,
+                          answers: {}, // 初始化作答記錄
+                        },
                       };
 
                       global.currentMiniGame = gamingState;
@@ -160,6 +169,11 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                       console.log(
                         `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C: GAMING 開始 (${duration}s 作答)`
                       );
+
+                      // 【新增】========== 設定自動結算 Timer ==========
+                      quizSettleTimer = setTimeout(async () => {
+                        await settleQuizRound(io, selectedQuestion);
+                      }, (duration + 1) * 1000); // 多 1 秒緩衝
                     } catch (error) {
                       console.error(
                         `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C 失敗:`,
@@ -420,6 +434,64 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
   socket.on("MINIGAME_ACTION", async (payload: any, callback?: Function) => {
     const action = payload?.type as string | undefined;
     
+    // 【新增】處理 Quiz 作答
+    if (action === "SUBMIT_ANSWER") {
+      try {
+        const userId = socket.data?.userId;
+        if (!userId) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} SUBMIT_ANSWER 收到但 userId 缺失`);
+          return;
+        }
+
+        const state = global.currentMiniGame;
+        if (!state || state.gameType !== "QUIZ" || state.phase !== "GAMING") {
+          console.warn(
+            `${new Date().toISOString()} ${LOG_PREFIX} SUBMIT_ANSWER 被忽略，當前狀態不符 (gameType=${state?.gameType}, phase=${state?.phase})`
+          );
+          return;
+        }
+
+        const answer = payload?.answer as string | undefined;
+        if (!answer || !["A", "B", "C", "D"].includes(answer)) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 提交無效答案: ${answer}`);
+          return;
+        }
+
+        // 檢查是否已作答
+        const answers = (state.data?.answers || {}) as Record<string, { answer: string; timestamp: number }>;
+        if (answers[String(userId)]) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 重複作答，忽略`);
+          return;
+        }
+
+        // 記錄答案
+        answers[String(userId)] = {
+          answer,
+          timestamp: Date.now(),
+        };
+
+        state.data = {
+          ...state.data,
+          answers,
+        };
+
+        // 同步更新（非阻塞）
+        saveMiniGameState(state).catch((err) =>
+          console.error(`${new Date().toISOString()} ${LOG_PREFIX} 備份答案失敗:`, err)
+        );
+
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 提交答案: ${answer} (timestamp: ${answers[String(userId)].timestamp})`
+        );
+
+        // 廣播更新（讓其他端知道有人作答了）
+        io.emit("MINIGAME_SYNC", state);
+      } catch (error: any) {
+        console.error(`${new Date().toISOString()} ${LOG_PREFIX} SUBMIT_ANSWER 處理失敗:`, error?.message || error);
+      }
+      return;
+    }
+    
     // 【新增】處理刮刮樂完成
     if (action === "SCRATCH_COMPLETE") {
       try {
@@ -560,4 +632,184 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
       }
     }
   });
+}
+
+// 【新增】========== Quiz 結算函數 ==========
+async function settleQuizRound(io: Server, question: any): Promise<void> {
+  const LOG_PREFIX = "[MiniGame][Quiz][Settle]";
+  
+  try {
+    const current = global.currentMiniGame ?? { ...defaultMiniGameState };
+    
+    if (current.gameType !== "QUIZ" || current.phase !== "GAMING") {
+      console.warn(
+        `${new Date().toISOString()} ${LOG_PREFIX} 狀態異常，跳過結算 (phase=${current.phase})`
+      );
+      return;
+    }
+
+    // 1. 取得所有作答記錄（從記憶體）
+    const answers = (current.data?.answers || {}) as Record<string, { answer: string; timestamp: number }>;
+    const correctAnswer = question.correctAnswer; // "A", "B", "C", "D"
+    const rewards = question.rewards as { first: number; second: number; third: number; others: number };
+    const duration = (question.duration || 10) * 1000; // 毫秒
+    const gamingEndTime = current.endTime || 0;
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 開始結算：題目 #${question.id}，正確答案 ${correctAnswer}，共 ${Object.keys(answers).length} 人作答`
+    );
+
+    // 2. 篩選答對的人並依時間排序
+    const correctUsers = Object.entries(answers)
+      .filter(([_, data]) => data.answer === correctAnswer)
+      .map(([userId, data]) => ({
+        userId: Number(userId),
+        timestamp: data.timestamp,
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp); // 最快的在前
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 答對人數：${correctUsers.length}`
+    );
+
+    if (correctUsers.length === 0) {
+      console.log(`${new Date().toISOString()} ${LOG_PREFIX} 無人答對，跳過發錢`);
+      
+      // 廣播 RESULT 狀態（無得主）
+      const resultState: MiniGameState = {
+        ...current,
+        phase: "RESULT",
+        data: {
+          ...current.data,
+          winners: [],
+        },
+      };
+      global.currentMiniGame = resultState;
+      await saveMiniGameState(resultState);
+      io.emit("MINIGAME_SYNC", resultState);
+      return;
+    }
+
+    // 3. 計算每個人的獎金
+    const winnerData: Array<{ userId: number; displayName: string; avatar: string | null; reward: number; rank: number }> = [];
+    const cashUpdates: Array<{ userId: number; reward: number }> = [];
+
+    for (let i = 0; i < correctUsers.length; i++) {
+      const { userId, timestamp } = correctUsers[i];
+      let reward = 0;
+
+      if (i === 0) {
+        reward = rewards.first; // 第一名
+      } else if (i === 1) {
+        reward = rewards.second; // 第二名
+      } else if (i === 2) {
+        reward = rewards.third; // 第三名
+      } else {
+        // 第四名以後：線性速度獎金
+        const remainingTime = gamingEndTime - timestamp; // 剩餘時間（毫秒）
+        const ratio = Math.max(0, Math.min(1, remainingTime / duration)); // 0~1
+        reward = Math.round(rewards.others + (rewards.third - rewards.others) * ratio);
+      }
+
+      cashUpdates.push({ userId, reward });
+      
+      // 查詢使用者資料（用於榜單顯示）
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, avatar: true },
+      });
+
+      winnerData.push({
+        userId,
+        displayName: user?.displayName || `User${userId}`,
+        avatar: user?.avatar || null,
+        reward,
+        rank: i + 1,
+      });
+
+      console.log(
+        `${new Date().toISOString()} ${LOG_PREFIX} Rank ${i + 1}: User ${userId} -> $${reward}`
+      );
+    }
+
+    // 4. 批次更新資料庫（Transaction）
+    await prisma.$transaction(async (tx) => {
+      for (const { userId, reward } of cashUpdates) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { cash: { increment: reward } },
+        });
+      }
+    });
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 資料庫更新完成，共發放 $${cashUpdates.reduce((sum, u) => sum + u.reward, 0)}`
+    );
+
+    // 5. 廣播結算狀態
+    const resultState: MiniGameState = {
+      ...current,
+      phase: "RESULT",
+      data: {
+        ...current.data,
+        winners: winnerData, // 前三名 + 獎金資訊
+      },
+    };
+
+    global.currentMiniGame = resultState;
+    await saveMiniGameState(resultState);
+    io.emit("MINIGAME_SYNC", resultState);
+
+    // 6. 推送個別使用者的資產更新
+    for (const { userId, reward } of cashUpdates) {
+      const updatedUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { cash: true, stocks: true, debt: true, dailyBorrowed: true },
+      });
+
+      if (updatedUser) {
+        const userSockets = await io.in(`user:${userId}`).fetchSockets();
+        for (const userSocket of userSockets) {
+          userSocket.emit("ASSETS_UPDATE", {
+            cash: updatedUser.cash,
+            stocks: updatedUser.stocks,
+            debt: updatedUser.debt,
+            dailyBorrowed: updatedUser.dailyBorrowed,
+          });
+        }
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} 已推送資產更新給 User ${userId} (Cash: ${updatedUser.cash})`
+        );
+      }
+    }
+
+    // 7. 更新排行榜
+    const { getLeaderboard } = await import("../services/gameService.js");
+    const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+    if (gameStatus) {
+      const currentPrice = (
+        await prisma.scriptDay.findFirst({
+          where: { day: gameStatus.currentDay },
+          select: { price: true },
+        })
+      )?.price || 50;
+
+      const leaderboard = await getLeaderboard(currentPrice);
+      io.emit("LEADERBOARD_UPDATE", { data: leaderboard });
+
+      console.log(
+        `${new Date().toISOString()} ${LOG_PREFIX} 排行榜已更新`
+      );
+    }
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 結算完成，進入 RESULT 階段`
+    );
+
+  } catch (error: any) {
+    console.error(
+      `${new Date().toISOString()} ${LOG_PREFIX} 結算失敗:`,
+      error?.message || error
+    );
+  }
 }
