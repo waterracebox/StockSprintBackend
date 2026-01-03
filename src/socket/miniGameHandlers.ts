@@ -20,6 +20,7 @@ let quizSettleTimer: NodeJS.Timeout | null = null;
 // 【新增】Minority 自動推進的 Timer
 let minorityPrepareTimer: NodeJS.Timeout | null = null;
 let minorityCountdownTimer: NodeJS.Timeout | null = null;
+let minoritySettleTimer: NodeJS.Timeout | null = null;
 
 // 【新增】清理所有 Quiz Timer 的函數
 function clearQuizTimers() {
@@ -43,6 +44,10 @@ function clearQuizTimers() {
   if (minorityCountdownTimer) {
     clearTimeout(minorityCountdownTimer);
     minorityCountdownTimer = null;
+  }
+  if (minoritySettleTimer) {
+    clearTimeout(minoritySettleTimer);
+    minoritySettleTimer = null;
   }
 }
 
@@ -182,7 +187,10 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                         `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C: GAMING 開始 (${duration}s 下注)`
                       );
 
-                      // TODO: 下一步會實作自動結算 Timer
+                      // 【新增】========== 設定自動結算 Timer ==========
+                      minoritySettleTimer = setTimeout(async () => {
+                        await settleMinorityRound(io, selectedQuestion);
+                      }, (duration + 1) * 1000); // 多 1 秒緩衝
                     } catch (error) {
                       console.error(
                         `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C 失敗:`,
@@ -1060,6 +1068,290 @@ async function settleQuizRound(io: Server, question: any): Promise<void> {
     console.log(
       `${new Date().toISOString()} ${LOG_PREFIX} 結算完成，進入 RESULT 階段`
     );
+
+  } catch (error: any) {
+    console.error(
+      `${new Date().toISOString()} ${LOG_PREFIX} 結算失敗:`,
+      error?.message || error
+    );
+  }
+}
+
+// 【新增】========== Minority 結算函數 ==========
+async function settleMinorityRound(io: Server, question: any): Promise<void> {
+  const LOG_PREFIX = "[MiniGame][Minority][Settle]";
+  
+  try {
+    const current = global.currentMiniGame ?? { ...defaultMiniGameState };
+    
+    if (current.gameType !== "MINORITY" || current.phase !== "GAMING") {
+      console.warn(
+        `${new Date().toISOString()} ${LOG_PREFIX} 狀態異常，跳過結算 (phase=${current.phase})`
+      );
+      return;
+    }
+
+    // ========== Step A: 聚合資料 ==========
+    const bets = (current.data?.minorityBets || []) as Array<{
+      userId: string;
+      optionIndex: string;
+      amount: number;
+      timestamp: number;
+    }>;
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 開始結算：題目 #${question.id}，共 ${bets.length} 人下注`
+    );
+
+    if (bets.length === 0) {
+      console.log(`${new Date().toISOString()} ${LOG_PREFIX} 無人下注，進入 RESULT 狀態`);
+      
+      const resultState: MiniGameState = {
+        ...current,
+        phase: "RESULT",
+        data: {
+          ...current.data,
+          settlementResult: { status: "REFUND", message: "無人下注" },
+        },
+      };
+      global.currentMiniGame = resultState;
+      await saveMiniGameState(resultState);
+      io.emit("MINIGAME_SYNC", resultState);
+      return;
+    }
+
+    // 統計各選項的人數與總金額
+    const optionStats: Record<string, { count: number; totalBet: number; userIds: number[] }> = {
+      A: { count: 0, totalBet: 0, userIds: [] },
+      B: { count: 0, totalBet: 0, userIds: [] },
+      C: { count: 0, totalBet: 0, userIds: [] },
+      D: { count: 0, totalBet: 0, userIds: [] },
+    };
+
+    for (const bet of bets) {
+      const opt = bet.optionIndex.toUpperCase();
+      if (!optionStats[opt]) continue;
+      optionStats[opt].count += 1;
+      optionStats[opt].totalBet += bet.amount;
+      optionStats[opt].userIds.push(Number(bet.userId));
+    }
+
+    console.log(`${new Date().toISOString()} ${LOG_PREFIX} 選項統計:`, JSON.stringify(optionStats));
+
+    // 過濾出有人選的選項
+    const votedOptions = Object.entries(optionStats).filter(([_, stats]) => stats.count > 0);
+
+    // ========== Step B: 判定邊界情況 ==========
+    let status: "REFUND" | "HOUSE_WINS" | "STANDARD";
+    let winnerOptions: string[] = [];
+    let loserOptions: string[] = [];
+
+    // Case 1: 所有人選同一個選項 (平局退款)
+    if (votedOptions.length === 1) {
+      status = "REFUND";
+      console.log(`${new Date().toISOString()} ${LOG_PREFIX} Case 1: 所有人選擇 ${votedOptions[0][0]}，平局退款`);
+    }
+    // Case 2: 所有選項人數相同 (莊家通殺)
+    else {
+      const counts = votedOptions.map(([_, stats]) => stats.count);
+      const allSameCount = counts.every((c) => c === counts[0]);
+      
+      if (allSameCount) {
+        status = "HOUSE_WINS";
+        loserOptions = votedOptions.map(([opt]) => opt);
+        console.log(`${new Date().toISOString()} ${LOG_PREFIX} Case 2: 所有選項人數相同 (${counts[0]}人)，莊家通殺`);
+      }
+      // Case 3: 標準模式 (最少人數獲勝)
+      else {
+        status = "STANDARD";
+        const minCount = Math.min(...counts);
+        winnerOptions = votedOptions.filter(([_, stats]) => stats.count === minCount).map(([opt]) => opt);
+        loserOptions = votedOptions.filter(([_, stats]) => stats.count > minCount).map(([opt]) => opt);
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} Case 3: 最少人數 ${minCount}，贏家: ${winnerOptions.join(", ")}，輸家: ${loserOptions.join(", ")}`
+        );
+      }
+    }
+
+    // ========== Step C: 計算變數 ==========
+    let loserPool = 0;
+    let totalWinnerBets = 0;
+
+    if (status === "STANDARD") {
+      for (const opt of loserOptions) {
+        loserPool += optionStats[opt].totalBet;
+      }
+      for (const opt of winnerOptions) {
+        totalWinnerBets += optionStats[opt].totalBet;
+      }
+      console.log(`${new Date().toISOString()} ${LOG_PREFIX} 獎池: $${loserPool}, 贏家總下注: $${totalWinnerBets}`);
+    }
+
+    // ========== Step D: Transaction 處理 ==========
+    const settlementResults: Array<{
+      userId: number;
+      displayName: string;
+      option: string;
+      betAmount: number;
+      status: "WINNER" | "LOSER" | "REFUND";
+      profit: number;
+      newCash: number;
+      newDebt: number;
+    }> = [];
+
+    await prisma.$transaction(async (tx) => {
+      for (const bet of bets) {
+        const userId = Number(bet.userId);
+        const option = bet.optionIndex.toUpperCase();
+        const betAmount = bet.amount;
+
+        // 【重新讀取最新餘額】避免 Race Condition
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { displayName: true, cash: true, debt: true },
+        });
+
+        if (!user) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 不存在，跳過`);
+          continue;
+        }
+
+        let newCash = user.cash;
+        let newDebt = user.debt;
+        let profit = 0;
+        let betStatus: "WINNER" | "LOSER" | "REFUND" = "REFUND";
+
+        // Case 1: 平局退款
+        if (status === "REFUND") {
+          betStatus = "REFUND";
+          // 不修改任何餘額
+        }
+        // Case 2 & Case 3: 計算輸贏
+        else {
+          const isWinner = winnerOptions.includes(option);
+          
+          if (isWinner && status === "STANDARD") {
+            // 贏家：計算獲利 (按比例分配獎池)
+            betStatus = "WINNER";
+            // 處理邊界情況：如果贏家押注為0或總押注為0，獲利也是0
+            if (totalWinnerBets > 0 && betAmount > 0) {
+              profit = Math.round((betAmount / totalWinnerBets) * loserPool);
+              newCash += profit;
+            } else {
+              profit = 0;
+              // 押注為0的贏家不獲利，餘額不變
+            }
+          } else {
+            // 輸家 (包含 HOUSE_WINS)
+            betStatus = "LOSER";
+            if (user.cash >= betAmount) {
+              // 有足夠現金扣除
+              newCash -= betAmount;
+            } else {
+              // 餘額不足，產生負債
+              const diff = betAmount - user.cash;
+              newCash = 0;
+              newDebt += diff;
+            }
+          }
+        }
+
+        // 【更新資料庫】
+        await tx.user.update({
+          where: { id: userId },
+          data: { cash: newCash, debt: newDebt },
+        });
+
+        settlementResults.push({
+          userId,
+          displayName: user.displayName,
+          option,
+          betAmount,
+          status: betStatus,
+          profit,
+          newCash,
+          newDebt,
+        });
+
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} User ${user.displayName} (${option}): ${betStatus}, 獲利 ${profit >= 0 ? '+' : ''}${profit}, 新餘額 Cash=${newCash}, Debt=${newDebt}`
+        );
+      }
+    });
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 資料庫更新完成，共處理 ${settlementResults.length} 筆`
+    );
+
+    // ========== Step E: 廣播結算狀態 ==========
+    const resultState: MiniGameState = {
+      ...current,
+      phase: "RESULT",
+      data: {
+        ...current.data,
+        settlementResult: {
+          status,
+          winnerOptions,
+          loserOptions,
+          optionStats: Object.entries(optionStats).map(([option, stats]) => ({
+            option,
+            count: stats.count,
+            totalBet: stats.totalBet,
+          })),
+          results: settlementResults,
+        },
+      },
+    };
+
+    global.currentMiniGame = resultState;
+    await saveMiniGameState(resultState);
+    io.emit("MINIGAME_SYNC", resultState);
+
+    console.log(
+      `${new Date().toISOString()} ${LOG_PREFIX} 結算完成，進入 RESULT 階段`
+    );
+
+    // 推送個別使用者的資產更新
+    for (const result of settlementResults) {
+      const updatedUser = await prisma.user.findUnique({
+        where: { id: result.userId },
+        select: { cash: true, stocks: true, debt: true, dailyBorrowed: true },
+      });
+
+      if (updatedUser) {
+        const userSockets = await io.in(`user:${result.userId}`).fetchSockets();
+        for (const userSocket of userSockets) {
+          userSocket.emit("ASSETS_UPDATE", {
+            cash: updatedUser.cash,
+            stocks: updatedUser.stocks,
+            debt: updatedUser.debt,
+            dailyBorrowed: updatedUser.dailyBorrowed,
+          });
+        }
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} 已推送資產更新給 User ${result.userId} (Cash: ${updatedUser.cash})`
+        );
+      }
+    }
+
+    // 更新排行榜
+    const { getLeaderboard } = await import("../services/gameService.js");
+    const gameStatus = await prisma.gameStatus.findUnique({ where: { id: 1 } });
+    if (gameStatus) {
+      const currentPrice = (
+        await prisma.scriptDay.findFirst({
+          where: { day: gameStatus.currentDay },
+          select: { price: true },
+        })
+      )?.price || 50;
+
+      const leaderboard = await getLeaderboard(currentPrice);
+      io.emit("LEADERBOARD_UPDATE", { data: leaderboard });
+
+      console.log(
+        `${new Date().toISOString()} ${LOG_PREFIX} 排行榜已更新`
+      );
+    }
 
   } catch (error: any) {
     console.error(

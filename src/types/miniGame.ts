@@ -34,6 +34,14 @@ export interface MiniGameState {
     quizAnswers?: { userId: string; answerIndex: string; timestamp: number }[];
     currentMinorityId?: number;
     minorityBets?: { userId: string; optionIndex: string; amount: number; timestamp: number }[];
+    settlementResult?: { 
+      status: string; 
+      winnerOptions?: string[]; 
+      loserOptions?: string[]; 
+      optionStats?: { option: string; count: number; totalBet: number }[]; 
+      results?: any[];
+      message?: string;
+    }; // Minority 結算結果
   };
 }
 
