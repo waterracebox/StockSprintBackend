@@ -382,6 +382,12 @@ export async function deleteUserHandler(req: Request, res: Response): Promise<vo
       return;
     }
 
+    // 防止管理員刪除自己的帳號
+    if (req.user && req.user.userId === userId) {
+      res.status(403).json({ error: '無法刪除自己的帳號' });
+      return;
+    }
+
     // 檢查使用者是否存在
     const existingUser = await prisma.user.findUnique({
       where: { id: userId },
@@ -390,12 +396,6 @@ export async function deleteUserHandler(req: Request, res: Response): Promise<vo
 
     if (!existingUser) {
       res.status(404).json({ error: '使用者不存在' });
-      return;
-    }
-
-    // 防止刪除管理員（可選，根據需求調整）
-    if (existingUser.role === 'ADMIN') {
-      res.status(403).json({ error: '無法刪除管理員帳號' });
       return;
     }
 
@@ -425,5 +425,61 @@ export async function deleteUserHandler(req: Request, res: Response): Promise<vo
   } catch (error: any) {
     console.error(`[${new Date().toISOString()}] [Admin] 刪除使用者失敗:`, error.message);
     res.status(500).json({ error: '刪除使用者失敗' });
+  }
+}
+
+/**
+ * 批量刪除所有非管理員玩家
+ * DELETE /api/admin/users/batch
+ */
+export async function batchDeleteUsersHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const { prisma } = await import('../db.js');
+    const io = getGlobalIO();
+
+    // 1. 查詢所有非管理員玩家
+    const nonAdminUsers = await prisma.user.findMany({
+      where: { role: { not: 'ADMIN' } },
+      select: { id: true, username: true },
+    });
+
+    if (nonAdminUsers.length === 0) {
+      res.json({ message: '目前沒有非管理員玩家', deletedCount: 0 });
+      return;
+    }
+
+    const userIds = nonAdminUsers.map((u) => u.id);
+
+    // 2. 使用 Transaction 刪除
+    await prisma.$transaction(async (tx) => {
+      // 刪除這些玩家的所有合約
+      await tx.contractOrder.deleteMany({
+        where: { userId: { in: userIds } },
+      });
+
+      // 刪除這些玩家
+      await tx.user.deleteMany({
+        where: { id: { in: userIds } },
+      });
+    });
+
+    // 3. 廣播強制登出給這些玩家
+    userIds.forEach((userId) => {
+      io.emit('FORCE_LOGOUT', {
+        userId,
+        reason: '您的帳號已被管理員批量刪除',
+      });
+    });
+
+    res.json({ 
+      message: `已刪除 ${nonAdminUsers.length} 位非管理員玩家`,
+      deletedCount: nonAdminUsers.length,
+      deletedUsers: nonAdminUsers.map((u) => u.username),
+    });
+
+    console.log(`[${new Date().toISOString()}] [Admin] 批量刪除 ${nonAdminUsers.length} 位非管理員玩家`);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] [Admin] 批量刪除玩家失敗:`, error.message);
+    res.status(500).json({ error: '批量刪除失敗' });
   }
 }

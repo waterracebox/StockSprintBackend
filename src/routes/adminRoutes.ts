@@ -13,6 +13,7 @@ import {
   getUsersHandler,         // 新增
   updateUserHandler,       // 新增
   deleteUserHandler,       // 新增
+  batchDeleteUsersHandler, // 新增
 } from '../controllers/adminController.js';
 import {
   batchImportEvents,
@@ -46,6 +47,7 @@ router.put('/params', updateParamsHandler);
 // 使用者管理（新增）
 router.get('/users', getUsersHandler);
 router.put('/users/:id', updateUserHandler);
+router.delete('/users/batch', batchDeleteUsersHandler);
 router.delete('/users/:id', deleteUserHandler);
 
 // 監控服務

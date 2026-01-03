@@ -57,8 +57,11 @@ async function main() {
       currentDay: 0,
       timeRatio: 60,
       totalDays: 120,
-      initialPrice: 50.0,
+      initialPrice: 200.0,
       initialCash: 50.0,
+      maxLeverage: 10.0,
+      dailyInterestRate: 0.0001,
+      maxLoanAmount: 1000,
     },
     create: {
       id: 1,
@@ -67,8 +70,11 @@ async function main() {
       currentDay: 0,
       timeRatio: 60,
       totalDays: 120,
-      initialPrice: 50.0,
+      initialPrice: 200.0,
       initialCash: 50.0,
+      maxLeverage: 10.0,
+      dailyInterestRate: 0.0001,
+      maxLoanAmount: 1000,
     },
   });
 

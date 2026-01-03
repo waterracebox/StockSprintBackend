@@ -116,7 +116,7 @@ export async function getGameState(): Promise<GameState> {
       currentDay: 0,
       timeRatio: 60,
       totalDays: 120,
-      initialPrice: 50.0,
+      initialPrice: 200.0,
       initialCash: 50.0,
       maxLeverage: 100.0,
       dailyInterestRate: 0.0001,
@@ -343,11 +343,11 @@ export async function resetGame(currentUserId: number): Promise<void> {
         currentDay: 0,
         timeRatio: 60,
         totalDays: 120,
-        initialPrice: 50.0,
+        initialPrice: 200.0,
         initialCash: 50.0,
         maxLeverage: 10.0,
         dailyInterestRate: 0.0001,
-        maxLoanAmount: 10000,
+        maxLoanAmount: 1000,
       },
     });
   });
