@@ -600,6 +600,95 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
   socket.on("MINIGAME_ACTION", async (payload: any, callback?: Function) => {
     const action = payload?.type as string | undefined;
     
+    // 【新增】處理 Minority 下注
+    if (action === "PLACE_BET") {
+      try {
+        const userId = socket.data?.userId;
+        if (!userId) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} PLACE_BET 收到但 userId 缺失`);
+          return;
+        }
+
+        const state = global.currentMiniGame;
+        if (!state || state.gameType !== "MINORITY" || state.phase !== "GAMING") {
+          console.warn(
+            `${new Date().toISOString()} ${LOG_PREFIX} PLACE_BET 被忽略，當前狀態不符 (gameType=${state?.gameType}, phase=${state?.phase})`
+          );
+          return;
+        }
+
+        const option = payload?.option as string | undefined;
+        const amount = Number(payload?.amount);
+
+        // 驗證選項格式
+        if (!option || !["A", "B", "C", "D"].includes(option)) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 提交無效選項: ${option}`);
+          return;
+        }
+
+        // 驗證金額格式（允許 0，因為用戶可能先選選項再調金額）
+        if (!Number.isFinite(amount) || amount < 0) {
+          console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 提交無效金額: ${amount}`);
+          return;
+        }
+
+        // 【餘額檢查】查詢使用者現金（只在金額 > 0 時檢查）
+        if (amount > 0) {
+          const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { cash: true },
+          });
+
+          if (!user) {
+            console.warn(`${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 不存在`);
+            socket.emit("GAME_ERROR", { message: "使用者不存在" });
+            return;
+          }
+
+          if (user.cash < amount) {
+            console.warn(
+              `${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 餘額不足 (cash=${user.cash}, bet=${amount})`
+            );
+            socket.emit("GAME_ERROR", { message: "現金不足，無法下注" });
+            return;
+          }
+        }
+
+        // 【記憶體更新】記錄下注（不扣款）
+        if (!state.data.minorityBets) {
+          state.data.minorityBets = [];
+        }
+
+        // 移除該使用者之前的下注記錄（覆蓋機制）
+        state.data.minorityBets = state.data.minorityBets.filter(
+          (bet: any) => bet.userId !== String(userId)
+        );
+
+        // 新增下注記錄
+        state.data.minorityBets.push({
+          userId: String(userId),
+          optionIndex: option,
+          amount,
+          timestamp: Date.now(),
+        });
+
+        console.log(
+          `${new Date().toISOString()} ${LOG_PREFIX} User ${userId} 下注 $${amount} 於選項 ${option}`
+        );
+
+        // 同步更新到 DB（非阻塞）
+        saveMiniGameState(state).catch((err) =>
+          console.error(`${new Date().toISOString()} ${LOG_PREFIX} 備份下注失敗:`, err)
+        );
+
+        // 【關鍵】廣播狀態更新，確保所有端（包括刷新頁面）都能看到最新下注
+        io.emit("MINIGAME_SYNC", state);
+      } catch (error: any) {
+        console.error(`${new Date().toISOString()} ${LOG_PREFIX} PLACE_BET 處理失敗:`, error?.message || error);
+      }
+      return;
+    }
+    
     // 【新增】處理 Quiz 作答
     if (action === "SUBMIT_ANSWER") {
       try {

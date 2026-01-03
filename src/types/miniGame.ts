@@ -33,7 +33,7 @@ export interface MiniGameState {
     winners?: Array<{ userId: number; displayName: string; avatar: string | null; reward: number; rank: number }>; // Quiz 結算結果
     quizAnswers?: { userId: string; answerIndex: string; timestamp: number }[];
     currentMinorityId?: number;
-    minorityBets?: { userId: string; optionIndex: string; amount: number }[];
+    minorityBets?: { userId: string; optionIndex: string; amount: number; timestamp: number }[];
   };
 }
 
