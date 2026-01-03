@@ -17,6 +17,10 @@ let quizPrepareTimer: NodeJS.Timeout | null = null;
 let quizCountdownTimer: NodeJS.Timeout | null = null;
 let quizSettleTimer: NodeJS.Timeout | null = null;
 
+// 【新增】Minority 自動推進的 Timer
+let minorityPrepareTimer: NodeJS.Timeout | null = null;
+let minorityCountdownTimer: NodeJS.Timeout | null = null;
+
 // 【新增】清理所有 Quiz Timer 的函數
 function clearQuizTimers() {
   if (quizPrepareTimer) {
@@ -30,6 +34,15 @@ function clearQuizTimers() {
   if (quizSettleTimer) {
     clearTimeout(quizSettleTimer);
     quizSettleTimer = null;
+  }
+  // 【新增】清理 Minority Timer
+  if (minorityPrepareTimer) {
+    clearTimeout(minorityPrepareTimer);
+    minorityPrepareTimer = null;
+  }
+  if (minorityCountdownTimer) {
+    clearTimeout(minorityCountdownTimer);
+    minorityCountdownTimer = null;
   }
 }
 
@@ -66,36 +79,158 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
           const gameType = payload?.gameType as "QUIZ" | "RED_ENVELOPE" | "MINORITY" | undefined;
 
           if (gameType === "MINORITY") {
-            // 【少數決初始化邏輯】
-            const firstQuestion = await prisma.minorityQuestion.findFirst({
-              orderBy: { id: "asc" },
-            });
+            const questionId = payload?.questionId as number | undefined;
 
-            if (!firstQuestion) {
-              console.warn(
-                `${new Date().toISOString()} ${LOG_PREFIX} Minority 初始化失敗：題庫為空`
+            if (questionId) {
+              // 【發布模式】：啟動三階段自動流程
+              const selectedQuestion = await prisma.minorityQuestion.findUnique({
+                where: { id: questionId },
+              });
+
+              if (!selectedQuestion) {
+                console.warn(
+                  `${new Date().toISOString()} ${LOG_PREFIX} Minority 發布失敗：題目 #${questionId} 不存在`
+                );
+                socket.emit("ERROR", { message: `題目 #${questionId} 不存在` });
+                break;
+              }
+
+              // 【清理舊 Timer】
+              clearQuizTimers();
+
+              // 查詢下一題
+              const nextQuestion = await prisma.minorityQuestion.findFirst({
+                where: { id: { gt: questionId } },
+                orderBy: { id: "asc" },
+              });
+
+              // ========== Step A: PREPARE (讀題階段) ==========
+              const prepareEndTime = Date.now() + 5000; // 5 秒讀題
+              const prepareState: MiniGameState = {
+                gameType: "MINORITY",
+                phase: "PREPARE",
+                startTime: Date.now(),
+                endTime: prepareEndTime,
+                data: {
+                  currentMinorityId: questionId,
+                  question: {
+                    title: selectedQuestion.question,
+                    options: [
+                      selectedQuestion.optionA,
+                      selectedQuestion.optionB,
+                      selectedQuestion.optionC,
+                      selectedQuestion.optionD,
+                    ],
+                    correctAnswer: "", // Minority 不需要正確答案
+                    rewards: null, // Minority 不需要獎勵配置
+                    duration: selectedQuestion.duration,
+                  },
+                  nextCandidateId: nextQuestion ? nextQuestion.id : undefined,
+                },
+              };
+
+              global.currentMiniGame = prepareState;
+              await saveMiniGameState(prepareState);
+              io.emit("MINIGAME_SYNC", prepareState);
+
+              console.log(
+                `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step A: PREPARE 開始 (5s 讀題)`
               );
-              socket.emit("ERROR", { message: "題庫為空，請先新增題目" });
-              break;
+
+              // ========== 設定 Timer：5 秒後進入 Step B ==========
+              minorityPrepareTimer = setTimeout(async () => {
+                try {
+                  // Step B: COUNTDOWN (倒數階段)
+                  const countdownEndTime = Date.now() + 3000; // 3 秒倒數
+                  const countdownState: MiniGameState = {
+                    ...prepareState,
+                    phase: "COUNTDOWN",
+                    startTime: Date.now(),
+                    endTime: countdownEndTime,
+                  };
+
+                  global.currentMiniGame = countdownState;
+                  await saveMiniGameState(countdownState);
+                  io.emit("MINIGAME_SYNC", countdownState);
+
+                  console.log(
+                    `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step B: COUNTDOWN 開始 (3s 倒數)`
+                  );
+
+                  // ========== 設定 Timer：3 秒後進入 Step C ==========
+                  minorityCountdownTimer = setTimeout(async () => {
+                    try {
+                      // Step C: GAMING (下注階段)
+                      const duration = selectedQuestion.duration || 10;
+                      const gamingEndTime = Date.now() + duration * 1000;
+                      const gamingState: MiniGameState = {
+                        ...countdownState,
+                        phase: "GAMING",
+                        startTime: Date.now(),
+                        endTime: gamingEndTime,
+                        data: {
+                          ...countdownState.data,
+                          minorityBets: [], // 初始化下注記錄
+                        },
+                      };
+
+                      global.currentMiniGame = gamingState;
+                      await saveMiniGameState(gamingState);
+                      io.emit("MINIGAME_SYNC", gamingState);
+
+                      console.log(
+                        `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C: GAMING 開始 (${duration}s 下注)`
+                      );
+
+                      // TODO: 下一步會實作自動結算 Timer
+                    } catch (error) {
+                      console.error(
+                        `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step C 失敗:`,
+                        error
+                      );
+                    }
+                  }, 3000);
+                } catch (error) {
+                  console.error(
+                    `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step B 失敗:`,
+                    error
+                  );
+                }
+              }, 5000);
+
+              console.log(
+                `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 發布題目 #${questionId}，啟動自動流程`
+              );
+            } else {
+              // 【初始化模式】：選擇第一題作為 nextCandidateId
+              const firstQuestion = await prisma.minorityQuestion.findFirst({
+                orderBy: { id: "asc" },
+              });
+
+              if (!firstQuestion) {
+                console.warn(`${new Date().toISOString()} ${LOG_PREFIX} Minority 初始化失敗：題庫為空`);
+                socket.emit("ERROR", { message: "題庫為空，請先新增題目" });
+                break;
+              }
+
+              const nextState: MiniGameState = {
+                gameType: "MINORITY",
+                phase: "IDLE",
+                startTime: Date.now(),
+                endTime: 0,
+                data: {
+                  nextCandidateId: firstQuestion.id,
+                },
+              };
+
+              global.currentMiniGame = nextState;
+              await saveMiniGameState(nextState);
+
+              io.emit("MINIGAME_SYNC", nextState);
+              console.log(
+                `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 初始化 Minority，預選題目 #${firstQuestion.id}`
+              );
             }
-
-            const nextState: MiniGameState = {
-              gameType: "MINORITY",
-              phase: "IDLE",
-              startTime: Date.now(),
-              endTime: 0,
-              data: {
-                nextCandidateId: firstQuestion.id, // 預選第一題
-              },
-            };
-
-            global.currentMiniGame = nextState;
-            await saveMiniGameState(nextState);
-
-            io.emit("MINIGAME_SYNC", nextState);
-            console.log(
-              `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 初始化 Minority，預選題目 #${firstQuestion.id}`
-            );
           } else if (gameType === "QUIZ") {
             // 【修改】檢查是否提供 questionId (發布模式)
             const questionId = payload?.questionId as number | undefined;
