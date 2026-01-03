@@ -114,6 +114,18 @@ model QuizQuestion {
   createdAt     DateTime @default(now())
 }
 
+// 少數決題庫
+model MinorityQuestion {
+  id        Int      @id @default(autoincrement())
+  question  String
+  optionA   String
+  optionB   String
+  optionC   String
+  optionD   String
+  duration  Int      @default(10) // 下注時間（秒）
+  createdAt DateTime @default(now())
+}
+
 // 小遊戲運行時狀態（僅存一筆，用於重啟恢復）
 model MiniGameRuntime {
   key       String   @id // 固定為 "CURRENT_GAME"

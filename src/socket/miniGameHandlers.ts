@@ -62,10 +62,41 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
         }
 
         case "INIT_GAME": {
-          // 判斷是 Quiz 還是 Red Envelope
-          const gameType = payload?.gameType as "QUIZ" | "RED_ENVELOPE" | undefined;
+          // 判斷是 Quiz、Red Envelope 還是 Minority
+          const gameType = payload?.gameType as "QUIZ" | "RED_ENVELOPE" | "MINORITY" | undefined;
 
-          if (gameType === "QUIZ") {
+          if (gameType === "MINORITY") {
+            // 【少數決初始化邏輯】
+            const firstQuestion = await prisma.minorityQuestion.findFirst({
+              orderBy: { id: "asc" },
+            });
+
+            if (!firstQuestion) {
+              console.warn(
+                `${new Date().toISOString()} ${LOG_PREFIX} Minority 初始化失敗：題庫為空`
+              );
+              socket.emit("ERROR", { message: "題庫為空，請先新增題目" });
+              break;
+            }
+
+            const nextState: MiniGameState = {
+              gameType: "MINORITY",
+              phase: "IDLE",
+              startTime: Date.now(),
+              endTime: 0,
+              data: {
+                nextCandidateId: firstQuestion.id, // 預選第一題
+              },
+            };
+
+            global.currentMiniGame = nextState;
+            await saveMiniGameState(nextState);
+
+            io.emit("MINIGAME_SYNC", nextState);
+            console.log(
+              `${new Date().toISOString()} ${LOG_PREFIX} Admin ${socket.data?.userId} 初始化 Minority，預選題目 #${firstQuestion.id}`
+            );
+          } else if (gameType === "QUIZ") {
             // 【修改】檢查是否提供 questionId (發布模式)
             const questionId = payload?.questionId as number | undefined;
 

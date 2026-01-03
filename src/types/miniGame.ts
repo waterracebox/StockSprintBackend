@@ -67,10 +67,12 @@ export interface QuizPayload {
 }
 
 export interface MinorityPayload {
-  currentQuestionId: number;
-  question: {
+  currentQuestionId?: number; // 已發布的題目 ID（phase=GAMING 時才有值）
+  nextCandidateId?: number;   // Admin Dropdown 預選的題目 ID（phase=IDLE 時有效）
+  question?: {
     title: string;
     options: string[];
+    duration: number;
   };
-  bets: Record<string, { option: string; amount: number; timestamp: number }>;
+  bets?: Record<string, { option: string; amount: number; timestamp: number }>;
 }
