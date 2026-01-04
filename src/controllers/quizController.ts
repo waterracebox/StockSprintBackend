@@ -7,7 +7,7 @@ const LOG_PREFIX = "[Admin][Quiz]";
 export async function getQuestions(req: Request, res: Response): Promise<void> {
   try {
     const questions = await prisma.quizQuestion.findMany({
-      orderBy: { id: "asc" },
+      orderBy: { sortOrder: "asc" },
     });
     res.json(questions);
   } catch (error: any) {
@@ -33,6 +33,12 @@ export async function createQuestion(req: Request, res: Response): Promise<void>
       return;
     }
 
+    // 取得當前最大 sortOrder，新題目插入到最後
+    const maxSortOrder = await prisma.quizQuestion.aggregate({
+      _max: { sortOrder: true },
+    });
+    const nextSortOrder = (maxSortOrder._max.sortOrder || 0) + 1;
+
     const created = await prisma.quizQuestion.create({
       data: {
         question,
@@ -43,6 +49,7 @@ export async function createQuestion(req: Request, res: Response): Promise<void>
         correctAnswer,
         rewards: rewards || { first: 20, second: 15, third: 10, others: 5 },
         duration: duration ? Number(duration) : 10,
+        sortOrder: nextSortOrder,
       },
     });
 
@@ -109,5 +116,33 @@ export async function deleteQuestion(req: Request, res: Response): Promise<void>
   } catch (error: any) {
     console.error(`${new Date().toISOString()} ${LOG_PREFIX} 刪除題目失敗:`, error);
     res.status(400).json({ error: error.message || "刪除題目失敗" });
+  }
+}
+
+/** 重新排序題目 */
+export async function reorderQuestions(req: Request, res: Response): Promise<void> {
+  try {
+    const { ids } = req.body as { ids: number[] };
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: "ids 必須為非空陣列" });
+      return;
+    }
+
+    // 使用 Transaction 批次更新 sortOrder
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.quizQuestion.update({
+          where: { id },
+          data: { sortOrder: index + 1 },
+        })
+      )
+    );
+
+    console.log(`${new Date().toISOString()} ${LOG_PREFIX} 重新排序題目: ${ids.join(", ")}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error(`${new Date().toISOString()} ${LOG_PREFIX} 重新排序失敗:`, error);
+    res.status(400).json({ error: error.message || "重新排序失敗" });
   }
 }

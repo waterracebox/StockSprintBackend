@@ -13,5 +13,6 @@ router.get("/", minorityController.getQuestions);
 router.post("/", minorityController.createQuestion);
 router.put("/:id", minorityController.updateQuestion);
 router.delete("/:id", minorityController.deleteQuestion);
+router.patch("/reorder", minorityController.reorderQuestions);
 
 export default router;

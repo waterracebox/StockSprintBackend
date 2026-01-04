@@ -103,10 +103,13 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
               // 【清理舊 Timer】
               clearQuizTimers();
 
-              // 查詢下一題
+              // 查詢下一題（根據 sortOrder）
               const nextQuestion = await prisma.minorityQuestion.findFirst({
-                where: { id: { gt: questionId } },
-                orderBy: { id: "asc" },
+                where: { sortOrder: { gt: selectedQuestion.sortOrder } },
+                orderBy: [
+                  { sortOrder: "asc" },
+                  { id: "asc" }, // Tie-breaker
+                ],
               });
 
               // ========== Step A: PREPARE (讀題階段) ==========
@@ -227,7 +230,10 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
             } else {
               // 【初始化模式】：選擇第一題作為 nextCandidateId
               const firstQuestion = await prisma.minorityQuestion.findFirst({
-                orderBy: { id: "asc" },
+                orderBy: [
+                  { sortOrder: "asc" },
+                  { id: "asc" }, // Tie-breaker
+                ],
               });
 
               if (!firstQuestion) {
@@ -275,10 +281,13 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
               // 【新增】清理舊的 Timer（防止重複觸發）
               clearQuizTimers();
 
-              // 查詢下一題
+              // 查詢下一題（根據 sortOrder）
               const nextQuestion = await prisma.quizQuestion.findFirst({
-                where: { id: { gt: questionId } },
-                orderBy: { id: "asc" },
+                where: { sortOrder: { gt: selectedQuestion.sortOrder } },
+                orderBy: [
+                  { sortOrder: "asc" },
+                  { id: "asc" }, // Tie-breaker
+                ],
               });
 
               // ========== Step A: PREPARE (讀題階段) ==========
@@ -399,7 +408,10 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
             } else {
               // 【初始化模式】：選擇第一題作為 nextCandidateId
               const firstQuestion = await prisma.quizQuestion.findFirst({
-                orderBy: { id: "asc" },
+                orderBy: [
+                  { sortOrder: "asc" },
+                  { id: "asc" }, // Tie-breaker
+                ],
               });
 
               if (!firstQuestion) {

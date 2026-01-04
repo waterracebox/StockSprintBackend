@@ -111,6 +111,7 @@ model QuizQuestion {
   correctAnswer String   // "A", "B", "C", "D"
   rewards       Json     // { first: 20, second: 15, third: 10, others: 5 }
   duration      Int      @default(10)
+  sortOrder     Int      @default(0) // 【新增】自訂排序欄位
   createdAt     DateTime @default(now())
 }
 
@@ -123,6 +124,7 @@ model MinorityQuestion {
   optionC   String
   optionD   String
   duration  Int      @default(10) // 下注時間（秒）
+  sortOrder Int      @default(0) // 【新增】自訂排序欄位
   createdAt DateTime @default(now())
 }
 

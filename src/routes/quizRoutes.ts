@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 import { requireAdmin } from "../middlewares/adminAuth.js";
-import { getQuestions, createQuestion, updateQuestion, deleteQuestion } from "../controllers/quizController.js";
+import { getQuestions, createQuestion, updateQuestion, deleteQuestion, reorderQuestions } from "../controllers/quizController.js";
 
 const router = Router();
 
@@ -13,5 +13,6 @@ router.get("/", getQuestions);
 router.post("/", createQuestion);
 router.put("/:id", updateQuestion);
 router.delete("/:id", deleteQuestion);
+router.patch("/reorder", reorderQuestions);
 
 export default router;

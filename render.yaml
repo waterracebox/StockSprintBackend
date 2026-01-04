@@ -9,7 +9,7 @@ services:
     region: singapore
     plan: free
     branch: main
-    buildCommand: npm ci && npx prisma generate && npx prisma db push --accept-data-loss && npm run build
+    buildCommand: npm ci && npx prisma generate && npx prisma db push --accept-data-loss && npm run build && npm run init-sortorder
     startCommand: npm start
     healthCheckPath: /health
     envVars:
