@@ -162,6 +162,21 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                     `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step B: COUNTDOWN 開始 (3s 倒數)`
                   );
 
+                  // 【新增】立即廣播第一次（t=0ms）
+                  io.emit('MINIGAME_COUNTDOWN', { countdown: 3 });
+                  console.log(`${new Date().toISOString()} ${LOG_PREFIX} 廣播倒數: 3`);
+
+                  // 然後每秒廣播剩餘數字
+                  let countdown = 2; // 從 2 開始
+                  const countdownInterval = setInterval(() => {
+                    io.emit('MINIGAME_COUNTDOWN', { countdown });
+                    console.log(`${new Date().toISOString()} ${LOG_PREFIX} 廣播倒數: ${countdown}`);
+                    if (countdown <= 0) {
+                      clearInterval(countdownInterval);
+                    }
+                    countdown--;
+                  }, 1000);
+
                   // ========== 設定 Timer：3 秒後進入 Step C ==========
                   minorityCountdownTimer = setTimeout(async () => {
                     try {
@@ -318,6 +333,21 @@ export function registerMiniGameHandlers(io: Server, socket: Socket): void {
                   console.log(
                     `${new Date().toISOString()} ${LOG_PREFIX} [Auto-Flow] Step B: COUNTDOWN 開始 (3s 倒數)`
                   );
+
+                  // 【新增】立即廣播第一次（t=0ms）
+                  io.emit('MINIGAME_COUNTDOWN', { countdown: 3 });
+                  console.log(`${new Date().toISOString()} ${LOG_PREFIX} 廣播倒數: 3`);
+
+                  // 然後每秒廣播剩餘數字
+                  let countdown = 2; // 從 2 開始
+                  const countdownInterval = setInterval(() => {
+                    io.emit('MINIGAME_COUNTDOWN', { countdown });
+                    console.log(`${new Date().toISOString()} ${LOG_PREFIX} 廣播倒數: ${countdown}`);
+                    if (countdown <= 0) {
+                      clearInterval(countdownInterval);
+                    }
+                    countdown--;
+                  }, 1000);
 
                   // ========== 設定 Timer：3 秒後進入 Step C ==========
                   quizCountdownTimer = setTimeout(async () => {
