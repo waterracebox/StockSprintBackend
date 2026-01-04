@@ -14,6 +14,7 @@ import {
   updateUserHandler,       // 新增
   deleteUserHandler,       // 新增
   batchDeleteUsersHandler, // 新增
+  systemWarmupHandler,     // 新增
 } from '../controllers/adminController.js';
 import {
   batchImportEvents,
@@ -43,6 +44,9 @@ router.post('/game/reset', resetGameHandler);
 // 參數管理
 router.get('/params', getParamsHandler);
 router.put('/params', updateParamsHandler);
+
+// 系統管理
+router.get('/system/warmup', systemWarmupHandler);
 
 // 使用者管理（新增）
 router.get('/users', getUsersHandler);

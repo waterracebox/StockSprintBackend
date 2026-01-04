@@ -483,3 +483,38 @@ export async function batchDeleteUsersHandler(req: Request, res: Response): Prom
     res.status(500).json({ error: '批量刪除失敗' });
   }
 }
+
+/**
+ * 系統暖機 - 保持資料庫連線池活躍
+ * GET /api/admin/system/warmup
+ */
+export async function systemWarmupHandler(req: Request, res: Response): Promise<void> {
+  const start = performance.now();
+  
+  try {
+    // 執行簡單的資料庫查詢以保持連線池活躍
+    const { prisma } = await import('../db.js');
+    await prisma.$queryRaw`SELECT 1`;
+    
+    const end = performance.now();
+    const duration = Math.round(end - start);
+    
+    console.log(`[${new Date().toISOString()}] [Admin] 系統暖機完成，延遲: ${duration}ms`);
+    
+    res.json({ 
+      status: 'WARM', 
+      duration 
+    });
+  } catch (error: any) {
+    const end = performance.now();
+    const duration = Math.round(end - start);
+    
+    console.error(`[${new Date().toISOString()}] [Admin] 系統暖機失敗:`, error.message);
+    
+    res.status(500).json({ 
+      status: 'ERROR', 
+      duration,
+      error: error.message 
+    });
+  }
+}
