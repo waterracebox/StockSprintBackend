@@ -177,9 +177,18 @@ export async function getGameState(): Promise<GameState> {
 /**
  * 開始遊戲
  * 設定 isGameStarted=true 並記錄遊戲開始時間
+ * 【Phase 4】重置所有使用者的行為追蹤計數器
  */
 export async function startGame(): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    // 【Phase 4】重置所有使用者的行為追蹤計數器
+    await tx.user.updateMany({
+      data: {
+        avatarUpdateCount: 0,
+        loanSharkVisitCount: 0,
+      },
+    });
+
     // 更新遊戲狀態
     await tx.gameStatus.update({
       where: { id: 1 },
@@ -200,7 +209,7 @@ export async function startGame(): Promise<void> {
   // 【新增】重新載入記憶體中的劇本資料，確保狀態一致
   await loadScriptData();
 
-  console.log(`[${new Date().toISOString()}] [Game] 遊戲已開始（記憶體已同步）`);
+  console.log(`[${new Date().toISOString()}] [Game] 遊戲已開始（記憶體已同步，行為追蹤已重置）`);
 }
 
 /**

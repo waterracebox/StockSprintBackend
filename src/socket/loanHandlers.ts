@@ -18,6 +18,29 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
   const roundToCents = (amount: number) => Math.round(amount * 100) / 100;
 
   /**
+   * 【Phase 4】追蹤地下錢莊訪問次數
+   * 前端開啟 Modal 時觸發此事件
+   */
+  socket.on('VISIT_LOAN_SHARK', async () => {
+    try {
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: { loanSharkVisitCount: { increment: 1 } },
+        select: { loanSharkVisitCount: true },
+      });
+
+      console.log(
+        `[${new Date().toISOString()}] [LoanShark] 使用者 ${userId} 訪問地下錢莊，累計 ${updatedUser.loanSharkVisitCount} 次`
+      );
+    } catch (error: any) {
+      console.error(
+        `[${new Date().toISOString()}] [LoanShark] 追蹤訪問失敗:`,
+        error.message
+      );
+    }
+  });
+
+  /**
    * 借款事件
    * Payload: { amount: number }
    */

@@ -221,10 +221,13 @@ export async function updateAvatar(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // 更新使用者頭像
+    // 更新使用者頭像並遞增計數器（Phase 4：用於結束儀式統計）
     const updatedUser = await prisma.user.update({
       where: { id: req.user.userId },
-      data: { avatar: avatar.trim() },
+      data: { 
+        avatar: avatar.trim(),
+        avatarUpdateCount: { increment: 1 } // 累加更換次數
+      },
       select: {
         id: true,
         username: true,
@@ -235,12 +238,13 @@ export async function updateAvatar(req: Request, res: Response): Promise<void> {
         debt: true,
         role: true,
         isEmployee: true,
+        avatarUpdateCount: true, // 回傳更新後的計數
         updatedAt: true,
       },
     });
 
     console.log(
-      `[${new Date().toISOString()}] [Auth] 使用者 ${req.user.userId} 更新頭像: ${avatar}`
+      `[${new Date().toISOString()}] [Auth] 使用者 ${req.user.userId} 更新頭像: ${avatar}，累計 ${updatedUser.avatarUpdateCount} 次`
     );
 
     res.status(200).json({

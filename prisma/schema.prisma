@@ -25,6 +25,10 @@ model User {
   firstSignIn     Boolean          @default(true)
   isEmployee      Boolean          @default(false)
   contractOrders  ContractOrder[]  // 關聯：合約訂單
+  
+  // 【Phase 4】遊戲行為追蹤欄位 (用於結束儀式統計)
+  avatarUpdateCount   Int          @default(0)      // 遊戲期間更換頭像次數
+  loanSharkVisitCount Int          @default(0)      // 遊戲期間開啟地下錢莊次數
 
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt

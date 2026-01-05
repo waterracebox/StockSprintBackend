@@ -29,6 +29,7 @@ import {
   exportScript,
   importScript,
 } from '../controllers/scriptController.js';
+import { getFinalStatsHandler } from '../controllers/finalStatsController.js'; // 【Phase 4】結束儀式統計
 
 const router = Router();
 
@@ -49,6 +50,9 @@ router.put('/params', updateParamsHandler);
 
 // 系統管理
 router.get('/system/warmup', systemWarmupHandler);
+
+// 【Phase 4】結束儀式統計資料
+router.get('/final-stats', getFinalStatsHandler);
 
 // 使用者管理（新增）
 router.get('/users', getUsersHandler);
