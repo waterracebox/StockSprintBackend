@@ -26,6 +26,8 @@ import {
   runValidation,
   updateEvent,
   updateScriptDay,
+  exportScript,
+  importScript,
 } from '../controllers/scriptController.js';
 
 const router = Router();
@@ -68,6 +70,10 @@ router.post('/events/batch', batchImportEvents);
 router.post('/script/generate', generateScript);
 router.get('/script/preview', previewScript);
 router.put('/script/day/:day', updateScriptDay);
+
+// 劇本備份與還原
+router.get('/script/export', exportScript);
+router.post('/script/import', importScript);
 
 // 蒙地卡羅模擬驗證
 router.post('/validate/run', runValidation);
