@@ -24,15 +24,6 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // 驗證密碼強度：至少8碼，包含大小寫英文及數字
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
-    if (!passwordRegex.test(password)) {
-      res.status(400).json({ 
-        error: "密碼至少8碼，需包含大小寫英文及數字" 
-      });
-      return;
-    }
-
     // 檢查使用者名稱是否已存在
     const existingUser = await prisma.user.findUnique({
       where: { username: trimmedUsername },
@@ -328,15 +319,6 @@ export async function registerAdmin(req: Request, res: Response): Promise<void> 
     // 驗證必填欄位
     if (!username || !password) {
       res.status(400).json({ error: "使用者名稱與密碼為必填" });
-      return;
-    }
-
-    // 驗證密碼強度：至少8碼，包含大小寫英文及數字
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
-    if (!passwordRegex.test(password)) {
-      res.status(400).json({ 
-        error: "密碼至少8碼，需包含大小寫英文及數字" 
-      });
       return;
     }
 
