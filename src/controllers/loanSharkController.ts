@@ -23,6 +23,10 @@ export const MAX_LOAN_SHARK_AFFINITY = 299;
  */
 export async function getPredictionHandler(req: Request, res: Response): Promise<void> {
   try {
+    if (!req.user) {
+      res.status(401).json({ error: '未授權' });
+      return;
+    }
     const userId = req.user.userId; // 由 authenticateToken 注入到 req.user
 
     // 1. 檢查使用者權限

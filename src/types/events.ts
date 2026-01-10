@@ -29,6 +29,7 @@ export interface PersonalAssets {
   stocks: number; // 持股數量
   debt: number; // 負債金額
   dailyBorrowed?: number; // 【新增】當日已借金額 (可選，向後相容)
+  loanSharkVisitCount?: number; // 【新增】地下錢莊訪問次數 (可選，向後相容)
 }
 
 /**
