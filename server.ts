@@ -17,6 +17,8 @@ import miniGameRoutes from "./src/routes/miniGameRoutes.js";
 import quizRoutes from "./src/routes/quizRoutes.js";
 // 【新增】少數決 CRUD 路由
 import minorityRoutes from "./src/routes/minorityRoutes.js";
+// 【新增】地下錢莊路由
+import loanSharkRoutes from "./src/routes/loanSharkRoutes.js";
 // Socket 認證中介軟體
 import { socketAuthMiddleware } from "./src/middlewares/socketAuthMiddleware.js";
 // 遊戲迴圈
@@ -66,6 +68,9 @@ app.use("/api/minigame", miniGameRoutes);
 
 // 【新增】掛載 Admin 路由
 app.use("/api/admin", adminRoutes);
+
+// 【新增】地下錢莊路由
+app.use("/api/game/script", loanSharkRoutes);
 
 // Admin 測試路由 (開發用)
 app.get("/api/admin/start-test", async (req, res) => {
@@ -187,7 +192,7 @@ io.on("connection", async (socket) => {
         // 取得使用者的最新資產資料
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: { cash: true, stocks: true, debt: true, dailyBorrowed: true }, // 【新增】dailyBorrowed
+            select: { cash: true, stocks: true, debt: true, dailyBorrowed: true, loanSharkVisitCount: true }, // 【新增】dailyBorrowed, loanSharkVisitCount
         });
 
         if (!user) {
@@ -261,6 +266,7 @@ io.on("connection", async (socket) => {
                 stocks: user.stocks,
                 debt: user.debt,
                 dailyBorrowed: user.dailyBorrowed, // 【新增】當日已借金額
+                loanSharkVisitCount: user.loanSharkVisitCount, // 【新增】地下錢莊訪問次數
             },
             activeContracts: activeContracts, // 新增：活躍合約列表
             newsHistory: newsHistory, // 【新增】新聞歷史

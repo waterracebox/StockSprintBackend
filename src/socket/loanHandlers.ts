@@ -19,7 +19,7 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
 
   /**
    * 【Phase 4】追蹤地下錢莊訪問次數
-   * 前端開啟 Modal 時觸發此事件
+   * 前端開啟 Modal 或點擊頭像時觸發此事件
    */
   socket.on('VISIT_LOAN_SHARK', async () => {
     try {
@@ -32,6 +32,11 @@ export function registerLoanHandlers(io: Server, socket: Socket): void {
       console.log(
         `[${new Date().toISOString()}] [LoanShark] 使用者 ${userId} 訪問地下錢莊，累計 ${updatedUser.loanSharkVisitCount} 次`
       );
+
+      // 【新增】立即推送更新後的訪問次數給前端
+      socket.emit('LOAN_SHARK_VISIT_UPDATE', {
+        loanSharkVisitCount: updatedUser.loanSharkVisitCount,
+      });
     } catch (error: any) {
       console.error(
         `[${new Date().toISOString()}] [LoanShark] 追蹤訪問失敗:`,
