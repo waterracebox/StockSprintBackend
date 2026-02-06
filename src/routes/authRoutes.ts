@@ -3,6 +3,7 @@
 import { Router } from "express";
 import { register, login, getMe, registerAdmin, updateAvatar, updateAccount } from "../controllers/authController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
+import { markTutorialComplete } from "../controllers/tutorialController.js";
 
 const router = Router();
 
@@ -23,5 +24,8 @@ router.patch("/avatar", authenticateToken, updateAvatar);
 
 // PATCH /api/auth/account - 更新帳號設定（需驗證）
 router.patch("/account", authenticateToken, updateAccount);
+
+// POST /api/auth/user/tutorial/complete - 標記教學完成（需驗證）
+router.post("/user/tutorial/complete", authenticateToken, markTutorialComplete);
 
 export default router;
