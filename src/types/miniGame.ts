@@ -38,7 +38,7 @@ export interface MiniGameState {
       status: string; 
       winnerOptions?: string[]; 
       loserOptions?: string[]; 
-      optionStats?: { option: string; count: number; totalBet: number }[]; 
+      optionStats?: Record<string, { count: number; totalBet: number; userIds: number[] }>; // 【修复】改为对象格式
       results?: any[];
       message?: string;
     }; // Minority 結算結果

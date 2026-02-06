@@ -1335,11 +1335,7 @@ async function settleMinorityRound(io: Server, question: any): Promise<void> {
           status,
           winnerOptions,
           loserOptions,
-          optionStats: Object.entries(optionStats).map(([option, stats]) => ({
-            option,
-            count: stats.count,
-            totalBet: stats.totalBet,
-          })),
+          optionStats, // 【修复】直接发送对象格式 { A: {...}, B: {...} }，前端 Display 页面使用 optionStats[letter] 访问
           results: settlementResults,
         },
       },
