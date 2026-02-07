@@ -204,10 +204,10 @@ export async function updateAvatar(req: Request, res: Response): Promise<void> {
     // 簡單驗證頭像格式（可根據需求擴充）
     const validExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
     const isValidFormat = validExtensions.some(ext => avatar.toLowerCase().endsWith(ext));
-    
+
     if (!isValidFormat) {
-      res.status(400).json({ 
-        error: "不支援的頭像格式，請使用 PNG、JPG、JPEG、GIF 或 WEBP" 
+      res.status(400).json({
+        error: "不支援的頭像格式，請使用 PNG、JPG、JPEG、GIF 或 WEBP"
       });
       return;
     }
@@ -215,7 +215,7 @@ export async function updateAvatar(req: Request, res: Response): Promise<void> {
     // 更新使用者頭像並遞增計數器（Phase 4：用於結束儀式統計）
     const updatedUser = await prisma.user.update({
       where: { id: req.user.userId },
-      data: { 
+      data: {
         avatar: avatar.trim(),
         avatarUpdateCount: { increment: 1 } // 累加更換次數
       },
@@ -263,15 +263,22 @@ export async function updateAccount(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const { isEmployee } = req.body;
+    const { isEmployee, firstSignIn } = req.body;
     if (typeof isEmployee !== 'boolean') {
       res.status(400).json({ error: "isEmployee 必須為布林值" });
       return;
     }
 
+    // 構建更新資料（firstSignIn 為可選欄位）
+    const updateData: { isEmployee: boolean; firstSignIn?: boolean } = { isEmployee };
+    if (typeof firstSignIn === 'boolean') {
+      updateData.firstSignIn = firstSignIn;
+      console.log(`[${new Date().toISOString()}] [Auth] 使用者 ${req.user.userId} 設定 firstSignIn=${firstSignIn}`);
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: req.user.userId },
-      data: { isEmployee },
+      data: updateData,
       select: {
         id: true,
         username: true,
